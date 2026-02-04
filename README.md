@@ -1,0 +1,157 @@
+# Robotics Social Credit System
+
+A fun Discord bot for tracking "social credit" in your robotics lab/team. Members earn points through lab time and positive community behaviors.
+
+## Features
+
+- **Reaction-based check-ins**: React to daily messages to track lab time
+- **Lab time credits**: Earn 1 credit per 30 minutes
+- **Bonus credits**: First arrival, night owl, weekend warrior, streaks
+- **Thank system**: `/thank @user` to give credits for helping
+- **Weekly leaderboard**: Automatic Sunday announcements with awards
+- **Fun penalties**: Magic smoke votes, roast reactions
+
+## Quick Start
+
+### 1. Create a Discord Bot
+
+1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
+2. Click "New Application" and give it a name
+3. Go to "Bot" section → Click "Add Bot"
+4. Copy the **Bot Token** (you'll need this)
+5. Enable these Privileged Gateway Intents:
+   - MESSAGE CONTENT INTENT
+   - SERVER MEMBERS INTENT
+
+### 2. Invite the Bot to Your Server
+
+1. Go to OAuth2 → URL Generator
+2. Select scopes: `bot`, `applications.commands`
+3. Select permissions:
+   - Send Messages
+   - Add Reactions
+   - Read Message History
+   - Use Slash Commands
+   - Embed Links
+4. Copy the generated URL and open it to invite the bot
+
+### 3. Get Channel IDs
+
+1. In Discord, go to User Settings → App Settings → Advanced
+2. Enable "Developer Mode"
+3. Right-click your check-ins channel → "Copy ID"
+
+### 4. Configure the Bot
+
+Create a `.env` file in the project folder:
+
+```env
+DISCORD_TOKEN=your-bot-token-here
+CHECKIN_CHANNEL_ID=123456789012345678
+ANNOUNCEMENTS_CHANNEL_ID=123456789012345678
+MEMES_CHANNEL_ID=123456789012345678
+```
+
+Or edit `config.py` directly.
+
+### 5. Install and Run
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the bot
+python bot.py
+```
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `/credit [@user]` | Check social credit score |
+| `/stats [@user]` | View detailed statistics |
+| `/leaderboard` | Show weekly leaderboard |
+| `/alltime` | Show all-time leaderboard |
+| `/history` | View your recent transactions |
+| `/thank @user [reason]` | Thank someone for helping (+5 to them) |
+| `/documented [description]` | Log documentation work (+3) |
+| `/magic-smoke @user` | Vote that someone released magic smoke |
+
+## Credit System
+
+### Earning Credits
+
+| Activity | Credits |
+|----------|---------|
+| Lab time | +1 per 30 min |
+| First to check in | +3 |
+| Night owl (after 8 PM) | +2 |
+| Weekend warrior | +5 |
+| Daily streak | +2 per day |
+| Being thanked | +5 |
+| Documentation | +3 |
+| Meme post (1x/day) | +1 |
+
+### Losing Credits
+
+| Activity | Credits |
+|----------|---------|
+| Magic smoke (3+ votes) | -10 |
+| Forgot to check out | -2 |
+| Got roasted (5+ 🔥) | -1 |
+
+## Weekly Awards
+
+Every Sunday at 6 PM:
+- 🏆 **Supreme Leader** - Highest credits
+- 🥈 **Comrade of the People** - Second place
+- 🥉 **Rising Star** - Third place
+- ⏰ **Lab Rat** - Most lab hours
+- 📈 **Most Improved** - Biggest jump from last week
+
+## Cloud Deployment
+
+### Railway (Recommended)
+
+1. Push your code to GitHub
+2. Go to [railway.app](https://railway.app)
+3. New Project → Deploy from GitHub repo
+4. Add environment variables in Railway dashboard
+5. Deploy!
+
+### Other Options
+
+- **Fly.io**: `fly launch` then `fly deploy`
+- **Render**: Connect GitHub, add env vars, deploy
+- **Heroku**: Similar to Railway
+- **VPS/Raspberry Pi**: Run with `screen` or `systemd`
+
+## File Structure
+
+```
+robotics-social-credit/
+├── bot.py              # Main entry point
+├── config.py           # Configuration
+├── database.py         # SQLite database
+├── cogs/
+│   ├── checkin.py      # Check-in reactions
+│   ├── social_credit.py # Credit commands
+│   └── leaderboard.py  # Stats & weekly posts
+├── utils/
+│   └── helpers.py      # Utility functions
+├── requirements.txt
+└── README.md
+```
+
+## Customization
+
+Edit `config.py` to change:
+- Credit values for each activity
+- Night owl hour (default: 8 PM)
+- Auto-checkout time (default: 12 hours)
+- Daily check-in time (default: 8 AM)
+- Weekly announcement day/time
+
+## License
+
+MIT - Do whatever you want with it!
