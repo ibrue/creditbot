@@ -14,6 +14,7 @@ CHECKIN_CHANNEL_ID = int(os.getenv("CHECKIN_CHANNEL_ID", "0"))
 ANNOUNCEMENTS_CHANNEL_ID = int(os.getenv("ANNOUNCEMENTS_CHANNEL_ID", "0"))
 MEMES_CHANNEL_ID = int(os.getenv("MEMES_CHANNEL_ID", "0"))  # Optional
 NOTEBOOKING_CHANNEL_ID = int(os.getenv("NOTEBOOKING_CHANNEL_ID", "0"))  # Auto documentation credits
+LAB_LOG_CHANNEL_ID = int(os.getenv("LAB_LOG_CHANNEL_ID", "0"))  # Daily lab log backup channel
 
 # Database
 DATABASE_PATH = os.getenv("DATABASE_PATH", "social_credit.db")
@@ -66,3 +67,8 @@ MAGIC_SMOKE_VOTES_REQUIRED = 3
 WINNER_ROLE_ID = int(os.getenv("WINNER_ROLE_ID", "0"))
 WINNER_ROLE_NAME = "Supreme Leader"
 WINNER_ROLE_COLOR = 0xFFD700  # Gold color
+
+# Kiosk / Subway Surfers Pi
+KIOSK_ENABLED = os.getenv("KIOSK_ENABLED", "false").lower() == "true"
+KIOSK_VIDEO_DIR = os.getenv("KIOSK_VIDEO_DIR", os.path.expanduser("~/subway-surfers-pi/videos"))
+KIOSK_FULLSCREEN = os.getenv("KIOSK_FULLSCREEN", "true").lower() == "true"

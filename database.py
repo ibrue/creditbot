@@ -981,6 +981,40 @@ def audit_all_users() -> list:
     return discrepancies
 
 
+def get_top_checkin_users(limit: int = 8) -> list:
+    """Get the users with the most check-in sessions (for kiosk quick buttons)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT discord_id, username, COUNT(*) as checkin_count
+        FROM checkins
+        GROUP BY discord_id
+        ORDER BY checkin_count DESC
+        LIMIT ?
+    """, (limit,))
+    users = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return users
+
+
+def get_daily_lab_log(target_date=None) -> list:
+    """Get all check-in/out sessions for a given date (defaults to today)."""
+    if target_date is None:
+        target_date = date.today()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT c.discord_id, u.username, c.checkin_time, c.checkout_time, c.credits_earned
+        FROM checkins c
+        JOIN users u ON c.discord_id = u.discord_id
+        WHERE DATE(c.checkin_time) = ?
+        ORDER BY c.checkin_time ASC
+    """, (target_date,))
+    log = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return log
+
+
 def fix_all_credits() -> list:
     """Fix all user credits from transaction history."""
     conn = get_connection()
