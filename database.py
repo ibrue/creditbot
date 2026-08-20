@@ -140,6 +140,17 @@ def init_database():
         )
     """)
 
+    # Face encodings for the kiosk (opt-in enrollment; embedding is a JSON array)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS face_encodings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            discord_id TEXT,
+            name TEXT,
+            embedding TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -894,6 +905,60 @@ def record_streak_bonus(discord_id: str):
     except:
         pass  # Already recorded
     conn.close()
+
+
+# ============ Face Encoding Operations (kiosk) ============
+
+def save_face_encoding(discord_id: str, name: str, embedding_json: str) -> int:
+    """Save a face encoding sample for a user. Returns the row id."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO face_encodings (discord_id, name, embedding)
+        VALUES (?, ?, ?)
+    """, (discord_id, name, embedding_json))
+    row_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return row_id
+
+
+def get_face_encodings() -> list:
+    """Get all enrolled face encodings."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, discord_id, name, embedding, created_at FROM face_encodings
+    """)
+    rows = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return rows
+
+
+def delete_face_encodings(discord_id: str) -> int:
+    """Delete all face encodings for a user. Returns number deleted."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "DELETE FROM face_encodings WHERE discord_id = ?", (discord_id,)
+    )
+    deleted = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return deleted
+
+
+def get_all_users() -> list:
+    """Get all users (for the kiosk enrollment picker)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT discord_id, username, total_credits FROM users
+        ORDER BY username COLLATE NOCASE
+    """)
+    users = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return users
 
 
 # ============ Audit Operations ============

@@ -109,6 +109,15 @@ Every Sunday at 6 PM:
 - ⏰ **Lab Rat** - Most lab hours
 - 📈 **Most Improved** - Biggest jump from last week
 
+## Run It on a NAS + Facial-Recognition Kiosk
+
+- **UGREEN NAS (or any Docker host):** see [NAS_SETUP.md](NAS_SETUP.md) —
+  `docker compose up -d --build` runs the bot plus a small kiosk API on
+  port 8765 that shares the same database.
+- **Check-in kiosk:** see [kiosk/README.md](kiosk/README.md) — a Linux GUI
+  with big Check In / Check Out buttons that recognizes enrolled members'
+  faces via webcam and checks them in with the same credits and bonuses.
+
 ## Cloud Deployment
 
 ### Railway (Recommended)

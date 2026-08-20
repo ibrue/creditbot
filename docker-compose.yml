@@ -1,0 +1,26 @@
+services:
+  bot:
+    build: .
+    container_name: creditbot
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - TZ=${TZ:-America/Chicago}
+      - DATABASE_PATH=/data/social_credit.db
+    volumes:
+      - ./data:/data
+    command: python bot.py
+
+  api:
+    build: .
+    container_name: creditbot-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - TZ=${TZ:-America/Chicago}
+      - DATABASE_PATH=/data/social_credit.db
+    volumes:
+      - ./data:/data
+    ports:
+      - "8765:8765"
+    command: uvicorn api:app --host 0.0.0.0 --port 8765
