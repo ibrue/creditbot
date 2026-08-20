@@ -2,8 +2,10 @@
 
 A fullscreen GUI for the lab: press **CHECK IN** or **CHECK OUT**,
 look at the webcam, and the kiosk recognizes your face and checks you
-in/out through the creditbot API on the NAS — same credits, bonuses, and
-streaks as checking in on Discord.
+in/out through the creditbot API — same credits, bonuses, and streaks as
+checking in on Discord. The API can run on the same PC
+([WINDOWS_SETUP.md](../WINDOWS_SETUP.md)) or on a NAS
+([NAS_SETUP.md](../NAS_SETUP.md)).
 
 Face recognition runs entirely on the kiosk machine using OpenCV's
 YuNet (detection) + SFace (recognition) ONNX models — CPU-only, no GPU
@@ -11,9 +13,11 @@ needed. Any Windows 10/11 PC or Linux box (Raspberry Pi included) with a
 webcam works.
 
 **Privacy:** enrollment is opt-in — each member enrolls their own face at
-the kiosk. Only compact face *embeddings* (128 numbers) are stored, not
-photos, and they're kept in the bot's database on your NAS. Anyone can be
-removed with one API call (see below).
+the kiosk. The server database stores only compact face *embeddings*
+(128 numbers), not photos. The kiosk machine additionally keeps a local
+capture log of enrolled members' faces (for fine-tuning, below) — it
+never saves faces of people who aren't enrolled, and it stays on the
+kiosk machine. Anyone can be removed completely (see below).
 
 ## Setup on Windows 10/11
 
@@ -74,13 +78,41 @@ Keys: **F11** fullscreen, **Esc** windowed, **Ctrl+Q** quit.
 If someone isn't recognized (haircut, glasses, lighting), just enroll
 them again — extra samples improve matching.
 
+## Face capture log + fine-tuning recognition
+
+Every recognized check-in/check-out (and every enrollment sample) saves
+the face crop locally under `face_log/<discord_id>_<name>/`, capped at
+500 captures per person (oldest are pruned). Toggle with
+`KIOSK_FACE_LOG=0` or move the folder with `KIOSK_FACE_LOG_DIR` in
+`.env`.
+
+When someone gets missed or misrecognized, fine-tune from those real
+captures — it rebuilds each person's stored embeddings from their most
+recent captures, keeping the most *diverse* set (different angles,
+lighting, glasses on/off), which beats the 5 same-pose samples from
+enrollment day:
+
+```bash
+python retune_faces.py            # retune everyone with logged captures
+python retune_faces.py --person <discord-id>   # just one person
+python retune_faces.py --dry-run  # preview without changing anything
+```
+
+(On Windows run it from the kiosk folder with
+`.venv\Scripts\python retune_faces.py`.) Then press **🔄 Refresh Faces**
+on the kiosk. If someone still isn't recognized well, have them use the
+kiosk normally for a few days — the log accumulates more varied captures
+— and retune again.
+
 ## Removing someone's face data
 
 ```bash
-curl -X DELETE -H "X-API-Key: <your-key>" http://<nas-ip>:8765/faces/<discord-id>
+curl -X DELETE -H "X-API-Key: <your-key>" http://<server-ip>:8765/faces/<discord-id>
 ```
 
-(Windows 10+ ships `curl` in Command Prompt / PowerShell.)
+(Windows 10+ ships `curl` in Command Prompt / PowerShell.) Then delete
+their `face_log/<discord_id>_<name>` folder on the kiosk machine to
+remove the local captures too.
 
 ## Troubleshooting
 

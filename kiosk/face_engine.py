@@ -51,6 +51,19 @@ class FaceEngine:
             return None
         return best
 
+    @staticmethod
+    def crop_face(frame_bgr, face_row, margin: float = 0.35):
+        """Cut the face out of the frame with some margin around it.
+
+        Returns a BGR image — used for the local face capture log.
+        """
+        fh, fw = frame_bgr.shape[:2]
+        x, y, w, h = [int(v) for v in face_row[:4]]
+        mx, my = int(w * margin), int(h * margin)
+        x1, y1 = max(0, x - mx), max(0, y - my)
+        x2, y2 = min(fw, x + w + mx), min(fh, y + h + my)
+        return frame_bgr[y1:y2, x1:x2].copy()
+
     def embed(self, frame_bgr, face_row):
         """Compute a normalized 128-d SFace embedding for a detected face."""
         aligned = self.recognizer.alignCrop(frame_bgr, face_row)

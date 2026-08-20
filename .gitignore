@@ -9,6 +9,9 @@ data/
 # Kiosk face models (downloaded by kiosk/download_models.py)
 kiosk/models/
 
+# Kiosk local face capture log (biometric data - never commit)
+kiosk/face_log/
+
 # Python
 __pycache__/
 *.py[cod]

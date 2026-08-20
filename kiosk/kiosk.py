@@ -32,6 +32,7 @@ try:
 except ImportError:
     pass
 
+import face_log
 from api_client import ApiClient
 from face_engine import FaceEngine
 
@@ -250,6 +251,12 @@ class KioskApp:
             discord_id, name, score = self.engine.match(embedding, self.known_faces)
             if discord_id is None:
                 return
+            # Log the capture locally so retune_faces.py can improve
+            # this person's stored embeddings later
+            face_log.save_capture(
+                discord_id, name, self.engine.crop_face(frame, face),
+                event=self.scan_action, score=score,
+            )
             entry = self.match_votes.get(discord_id, (name, 0))
             self.match_votes[discord_id] = (name, entry[1] + 1)
             if self.match_votes[discord_id][1] >= MATCH_VOTES:
@@ -265,6 +272,11 @@ class KioskApp:
                 return
             self.last_enroll_capture = now
             self.enroll_collected.append(self.engine.embed(frame, face))
+            discord_id, name = self.enroll_target
+            face_log.save_capture(
+                discord_id, name, self.engine.crop_face(frame, face),
+                event="enroll",
+            )
             captured = len(self.enroll_collected)
             self.set_message(
                 f"Capturing face samples... {captured}/{ENROLL_SAMPLES}", "#80cbc4"

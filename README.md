@@ -109,15 +109,19 @@ Every Sunday at 6 PM:
 - ⏰ **Lab Rat** - Most lab hours
 - 📈 **Most Improved** - Biggest jump from last week
 
-## Run It on a NAS + Facial-Recognition Kiosk
+## Self-Hosting + Facial-Recognition Kiosk
 
+- **One Windows 10/11 PC (easiest):** see [WINDOWS_SETUP.md](WINDOWS_SETUP.md) —
+  `setup_server.bat` + `start_server.bat` run the bot and the kiosk API
+  together, and the same PC can run the kiosk GUI.
 - **UGREEN NAS (or any Docker host):** see [NAS_SETUP.md](NAS_SETUP.md) —
-  `docker compose up -d --build` runs the bot plus a small kiosk API on
-  port 8765 that shares the same database.
+  `docker compose up -d --build` runs the bot plus the kiosk API on
+  port 8765 sharing the same database.
 - **Check-in kiosk:** see [kiosk/README.md](kiosk/README.md) — a GUI for
   Windows 10/11 or Linux with big Check In / Check Out buttons that
   recognizes enrolled members' faces via webcam and checks them in with
-  the same credits and bonuses.
+  the same credits and bonuses. Recognized captures are logged locally so
+  `retune_faces.py` can fine-tune recognition per person over time.
 
 ## Cloud Deployment
 
