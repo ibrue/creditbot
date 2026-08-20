@@ -9,18 +9,23 @@ Run:  uvicorn api:app --host 0.0.0.0 --port 8765
 Auth: every request (except /health) must send the header
       X-API-Key: <KIOSK_API_KEY from the environment>
 """
+import base64
 import json
 import os
 import secrets
+from datetime import datetime
 
+import requests
 from fastapi import Depends, FastAPI, HTTPException, Security
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
 
 import checkin_logic
+import config
 import database
 
 API_KEY = os.getenv("KIOSK_API_KEY", "")
+DISCORD_API = "https://discord.com/api/v10"
 
 app = FastAPI(title="Social Credit Kiosk API", version="1.0.0")
 
@@ -43,6 +48,9 @@ def require_api_key(key: str = Security(api_key_header)):
 class CheckinRequest(BaseModel):
     discord_id: str = Field(min_length=1, max_length=32)
     username: str = Field(min_length=1, max_length=100)
+    # Optional check-in photo (JPEG, base64) — queued for the bot to post
+    # to the check-in channel
+    photo_b64: str | None = Field(default=None, max_length=8_000_000)
 
 
 class CheckoutRequest(BaseModel):
@@ -74,6 +82,26 @@ def checked_in():
 def checkin(req: CheckinRequest):
     result = checkin_logic.perform_checkin(req.discord_id, req.username, source="kiosk")
     print(f"🖥️ Kiosk check-in: {req.username} -> {result['status']}")
+
+    # Queue the check-in photo for the bot to post in the check-in channel
+    if result["status"] == "checked_in" and req.photo_b64 and config.KIOSK_POST_PHOTOS:
+        try:
+            photo = base64.b64decode(req.photo_b64, validate=True)
+            os.makedirs(config.KIOSK_UPLOADS_DIR, exist_ok=True)
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            path = os.path.join(config.KIOSK_UPLOADS_DIR,
+                                f"{req.discord_id}_{stamp}.jpg")
+            with open(path, "wb") as f:
+                f.write(photo)
+            database.add_kiosk_photo(
+                req.discord_id, req.username, path,
+                bonuses=json.dumps(result.get("bonuses", []))
+            )
+            result["photo_queued"] = True
+        except Exception as e:
+            print(f"⚠️ Could not queue check-in photo: {e}")
+            result["photo_queued"] = False
+
     return result
 
 
@@ -92,6 +120,85 @@ def status(discord_id: str):
         "checked_in": active is not None,
         "checkin_time": active["checkin_time"] if active else None,
         "total_credits": user["total_credits"] if user else 0,
+    }
+
+
+class AddMemberRequest(BaseModel):
+    discord_id: str = Field(min_length=1, max_length=32)
+    username: str = Field(min_length=1, max_length=100)
+
+
+def _discord_get(path: str, params: dict | None = None):
+    """Call the Discord REST API with the bot token."""
+    if not config.DISCORD_TOKEN or config.DISCORD_TOKEN == "your-bot-token-here":
+        raise HTTPException(status_code=503, detail="DISCORD_TOKEN not configured")
+    r = requests.get(
+        f"{DISCORD_API}{path}",
+        headers={"Authorization": f"Bot {config.DISCORD_TOKEN}"},
+        params=params,
+        timeout=10,
+    )
+    if r.status_code == 404:
+        raise HTTPException(status_code=404, detail="Not found on Discord")
+    r.raise_for_status()
+    return r.json()
+
+
+def _avatar_url(user: dict) -> str | None:
+    if user.get("avatar"):
+        return f"https://cdn.discordapp.com/avatars/{user['id']}/{user['avatar']}.png?size=128"
+    return None
+
+
+@app.get("/discord/search", dependencies=[Depends(require_api_key)])
+def discord_search(q: str):
+    """Search members of the configured Discord server by name."""
+    if config.GUILD_ID == 0:
+        raise HTTPException(
+            status_code=503,
+            detail="GUILD_ID not set in the server .env — needed for Discord search"
+        )
+    members = _discord_get(
+        f"/guilds/{config.GUILD_ID}/members/search",
+        params={"query": q, "limit": 10},
+    )
+    results = []
+    for m in members:
+        user = m.get("user", {})
+        if user.get("bot"):
+            continue
+        results.append({
+            "discord_id": user.get("id"),
+            "username": user.get("username"),
+            "display_name": m.get("nick") or user.get("global_name") or user.get("username"),
+            "avatar_url": _avatar_url(user),
+        })
+    return {"results": results}
+
+
+@app.get("/discord/user/{discord_id}", dependencies=[Depends(require_api_key)])
+def discord_user(discord_id: str):
+    """Pull a Discord user's profile by ID."""
+    user = _discord_get(f"/users/{discord_id}")
+    return {
+        "discord_id": user.get("id"),
+        "username": user.get("username"),
+        "display_name": user.get("global_name") or user.get("username"),
+        "avatar_url": _avatar_url(user),
+    }
+
+
+@app.post("/members", dependencies=[Depends(require_api_key)])
+def add_member(req: AddMemberRequest):
+    """Add a person to the credit system (or update their username)."""
+    user = database.get_or_create_user(req.discord_id, req.username)
+    database.update_username(req.discord_id, req.username)
+    print(f"🖥️ Kiosk member add/link: {req.username} ({req.discord_id})")
+    return {
+        "status": "ok",
+        "discord_id": req.discord_id,
+        "username": req.username,
+        "total_credits": user["total_credits"],
     }
 
 

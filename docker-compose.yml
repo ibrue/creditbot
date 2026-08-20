@@ -7,6 +7,7 @@ services:
     environment:
       - TZ=${TZ:-America/Chicago}
       - DATABASE_PATH=/data/social_credit.db
+      - KIOSK_UPLOADS_DIR=/data/kiosk_uploads
     volumes:
       - ./data:/data
     command: python bot.py
@@ -19,6 +20,7 @@ services:
     environment:
       - TZ=${TZ:-America/Chicago}
       - DATABASE_PATH=/data/social_credit.db
+      - KIOSK_UPLOADS_DIR=/data/kiosk_uploads
     volumes:
       - ./data:/data
     ports:

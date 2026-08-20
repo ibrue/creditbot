@@ -61,22 +61,39 @@ class LeaderboardCog(commands.Cog):
         return role
 
     async def update_winner_role(self, guild: discord.Guild, winner_id: str):
-        """Remove role from previous winner and assign to new winner."""
+        """Revoke the role from all previous holders and assign it to the new winner."""
         try:
             role = await self.get_or_create_winner_role(guild)
 
-            # Remove role from all current holders
-            for member in role.members:
+            # role.members relies on the member cache, which can be empty
+            # right after a restart — chunk the guild first so revocation
+            # always sees every current holder
+            if not guild.chunked:
                 try:
-                    await member.remove_roles(role, reason="New weekly winner")
-                    print(f"👑 Removed {role.name} from {member.name}")
+                    await guild.chunk(cache=True)
+                except Exception as e:
+                    print(f"⚠️ Could not chunk guild members: {e}")
+
+            # Revoke from all current holders (except a repeat winner)
+            for member in list(role.members):
+                if str(member.id) == winner_id:
+                    continue
+                try:
+                    await member.remove_roles(role, reason="New weekly winner crowned")
+                    print(f"👑 Revoked {role.name} from {member.name}")
                 except Exception as e:
                     print(f"⚠️ Could not remove role from {member.name}: {e}")
 
             # Add role to new winner
             winner = guild.get_member(int(winner_id))
+            if winner is None:
+                try:
+                    winner = await guild.fetch_member(int(winner_id))
+                except discord.NotFound:
+                    winner = None
             if winner:
-                await winner.add_roles(role, reason="Weekly Social Credit Winner!")
+                if role not in winner.roles:
+                    await winner.add_roles(role, reason="Weekly Social Credit Winner!")
                 print(f"👑 Assigned {role.name} to {winner.name}")
                 return winner
             else:

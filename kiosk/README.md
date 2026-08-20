@@ -67,16 +67,26 @@ service).
 
 Keys: **F11** fullscreen, **Esc** windowed, **Ctrl+Q** quit.
 
-1. **Enroll (once per person):** press **📷 Enroll Face**, pick yourself
-   from the member list (or type your Discord ID + name), then look at
-   the camera while it captures 5 samples.
-2. **Check in:** press **CHECK IN**, look at the camera. When it
-   recognizes you it checks you in and shows your bonuses.
-3. **Check out:** press **CHECK OUT**, look at the camera. Shows your
-   session time and credits earned.
+1. **Add a person (once):** press **👤 Add Person / Enroll**. Search your
+   Discord server by name — the kiosk pulls the matching accounts straight
+   from Discord (needs `GUILD_ID` in the server `.env`) — or pick someone
+   already in the system, or type a Discord ID. Then **➕ Add Person**
+   just links them, or **📷 Add + Enroll Face** also captures their face:
+   the kiosk guides them to look straight, then turn to each side, so
+   recognition works from multiple angles.
+2. **Check in:** press **CHECK IN** and look at the camera. After it
+   recognizes you, it asks you to slowly turn your head side to side — a
+   quick liveness check so a photo of someone can't check them in. Then
+   it checks you in, shows your bonuses, and (if enabled) sends your
+   check-in photo to the Discord check-in channel, where the bot posts it
+   with a fun AI caption if the server has Ollama running.
+3. **Check out:** press **CHECK OUT**, look at the camera, turn your head
+   when asked. Shows your session time and credits earned.
 
 If someone isn't recognized (haircut, glasses, lighting), just enroll
-them again — extra samples improve matching.
+them again — extra samples improve matching. To skip the head-turn
+challenge (e.g. for a demo), set `KIOSK_LIVENESS=0` in `.env`; to keep
+check-in photos off Discord, set `KIOSK_SEND_PHOTO=0`.
 
 ## Face capture log + fine-tuning recognition
 

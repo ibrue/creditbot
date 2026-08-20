@@ -15,6 +15,7 @@ Configuration (environment variables or a .env file in this folder):
 
 Keys: F11 toggles fullscreen, Esc leaves fullscreen, Ctrl+Q quits.
 """
+import base64
 import os
 import queue
 import sys
@@ -40,11 +41,25 @@ API_URL = os.getenv("KIOSK_API_URL", "http://localhost:8765")
 API_KEY = os.getenv("KIOSK_API_KEY", "")
 CAMERA_INDEX = int(os.getenv("KIOSK_CAMERA", "0"))
 START_FULLSCREEN = os.getenv("KIOSK_FULLSCREEN", "0") == "1"
+# Send the check-in photo to the server so the bot posts it to Discord
+SEND_PHOTO = os.getenv("KIOSK_SEND_PHOTO", "1") == "1"
 
-SCAN_SECONDS = 10        # how long to look for a face after a button press
-MATCH_VOTES = 3          # consecutive-ish frame matches required
-ENROLL_SAMPLES = 5       # face samples captured during enrollment
+SCAN_SECONDS = 12        # how long to look for a face after a button press
+MATCH_VOTES = 3          # frontal frame matches required to identify someone
+VOTE_SCORE = 0.38        # min cosine score for a frame to count as a vote
+                         # (slightly stricter than the raw match threshold)
 RESULT_SECONDS = 6       # how long the result screen shows
+
+# Liveness check: after being identified, the person must slowly turn
+# their head to both sides — a photo held up to the camera can't do that.
+LIVENESS_ENABLED = os.getenv("KIOSK_LIVENESS", "1") == "1"
+LIVENESS_SECONDS = 10    # extra time allowed for the head-turn challenge
+YAW_TURN = 0.30          # yaw ratio that counts as "turned to a side"
+YAW_FRONTAL = 0.18       # |yaw| below this counts as "facing the camera"
+
+# Pose-guided enrollment: samples are captured facing the camera AND
+# turned to each side, so recognition stays robust at an angle.
+ENROLL_BINS = {"center": 3, "side1": 2, "side2": 2}
 
 FONT = "Segoe UI" if sys.platform == "win32" else "DejaVu Sans"
 
@@ -92,8 +107,13 @@ class KioskApp:
         self.scan_action = None          # "checkin" or "checkout"
         self.scan_deadline = 0.0
         self.match_votes = {}            # discord_id -> (name, votes)
+        self.candidate = None            # (discord_id, name) after phase 1
+        self.candidate_frame = None      # clean frontal frame for the photo
+        self.yaw_min = 0.0               # liveness: extremes seen so far
+        self.yaw_max = 0.0
         self.enroll_target = None        # (discord_id, name)
         self.enroll_collected = []
+        self.enroll_bins = dict.fromkeys(ENROLL_BINS, 0)
         self.last_enroll_capture = 0.0
         self.result_until = 0.0
         self.api_queue = queue.Queue()
@@ -143,7 +163,7 @@ class KioskApp:
 
         small_font = (FONT, 13)
         tk.Button(
-            panel, text="📷 Enroll Face", font=small_font, bg=BLUE, fg="white",
+            panel, text="👤 Add Person / Enroll", font=small_font, bg=BLUE, fg="white",
             bd=0, cursor="hand2", command=self.open_enroll_dialog,
         ).pack(pady=(40, 6), fill="x")
         tk.Button(
@@ -175,15 +195,19 @@ class KioskApp:
         if self.state not in ("idle", "result"):
             return
         if not self.known_faces:
-            self.set_message("No faces enrolled yet — press Enroll Face first!", "#ffb300")
+            self.set_message("No faces enrolled yet — press Add Person / Enroll first!", "#ffb300")
             return
         self.state = "scanning"
         self.scan_action = action
         self.scan_deadline = time.time() + SCAN_SECONDS
         self.match_votes = {}
+        self.candidate = None
+        self.candidate_frame = None
+        self.yaw_min = 0.0
+        self.yaw_max = 0.0
         self.cancel_btn.pack(pady=8)
         verb = "check in" if action == "checkin" else "check out"
-        self.set_message(f"Look at the camera to {verb}...", "#80cbc4")
+        self.set_message(f"Look straight at the camera to {verb}...", "#80cbc4")
 
     def cancel_scan(self):
         self.state = "idle"
@@ -193,16 +217,17 @@ class KioskApp:
     def open_enroll_dialog(self):
         if self.state not in ("idle", "result"):
             return
-        EnrollDialog(self)
+        AddPersonDialog(self)
 
     def start_enrollment(self, discord_id, name):
         self.state = "enrolling"
         self.enroll_target = (discord_id, name)
         self.enroll_collected = []
+        self.enroll_bins = dict.fromkeys(ENROLL_BINS, 0)
         self.last_enroll_capture = 0.0
         self.cancel_btn.pack(pady=8)
         self.set_message(
-            f"Enrolling {name} — look at the camera and move your head slightly...",
+            f"Enrolling {name} — look straight at the camera...",
             "#80cbc4",
         )
 
@@ -241,55 +266,165 @@ class KioskApp:
         if self.state == "scanning":
             if time.time() > self.scan_deadline:
                 self.cancel_btn.pack_forget()
-                self._show_result("😕 No recognized face. Try again or enroll.", "#ffb300")
+                if self.candidate:
+                    self._show_result(
+                        "😕 Liveness check timed out — try again and slowly "
+                        "turn your head to both sides.", "#ffb300"
+                    )
+                else:
+                    self._show_result("😕 No recognized face. Try again or enroll.", "#ffb300")
                 return
             face = self.engine.detect_best_face(frame)
             if face is None:
                 return
+            clean = frame.copy()  # keep a copy without the face box overlay
             self._draw_face_box(frame, face)
-            embedding = self.engine.embed(frame, face)
-            discord_id, name, score = self.engine.match(embedding, self.known_faces)
-            if discord_id is None:
-                return
-            # Log the capture locally so retune_faces.py can improve
-            # this person's stored embeddings later
-            face_log.save_capture(
-                discord_id, name, self.engine.crop_face(frame, face),
-                event=self.scan_action, score=score,
-            )
-            entry = self.match_votes.get(discord_id, (name, 0))
-            self.match_votes[discord_id] = (name, entry[1] + 1)
-            if self.match_votes[discord_id][1] >= MATCH_VOTES:
-                self._finish_scan(discord_id, name)
+            yaw = self.engine.yaw_ratio(face)
+
+            if self.candidate is None:
+                self._scan_identify(clean, face, yaw)
+            else:
+                self._scan_liveness(clean, face, yaw)
 
         elif self.state == "enrolling":
             face = self.engine.detect_best_face(frame)
             if face is None:
                 return
+            clean = frame.copy()
             self._draw_face_box(frame, face)
+            yaw = self.engine.yaw_ratio(face)
+
+            # Which pose bin does this frame fall into?
+            if abs(yaw) <= YAW_FRONTAL:
+                pose = "center"
+            elif yaw <= -0.22:
+                pose = "side1"
+            elif yaw >= 0.22:
+                pose = "side2"
+            else:
+                pose = None  # in-between angle, ignore
+
+            self.set_message(self._enroll_prompt(), "#80cbc4")
+
+            if pose is None or self.enroll_bins[pose] >= ENROLL_BINS[pose]:
+                return
             now = time.time()
             if now - self.last_enroll_capture < 0.7:
                 return
             self.last_enroll_capture = now
-            self.enroll_collected.append(self.engine.embed(frame, face))
+
+            self.enroll_collected.append(self.engine.embed(clean, face))
+            self.enroll_bins[pose] += 1
             discord_id, name = self.enroll_target
             face_log.save_capture(
-                discord_id, name, self.engine.crop_face(frame, face),
-                event="enroll",
+                discord_id, name, self.engine.crop_face(clean, face),
+                event=f"enroll_{pose}",
             )
-            captured = len(self.enroll_collected)
-            self.set_message(
-                f"Capturing face samples... {captured}/{ENROLL_SAMPLES}", "#80cbc4"
-            )
-            if captured >= ENROLL_SAMPLES:
+            if all(self.enroll_bins[b] >= ENROLL_BINS[b] for b in ENROLL_BINS):
                 self._finish_enrollment()
 
-    def _finish_scan(self, discord_id, name):
+    def _enroll_prompt(self) -> str:
+        """Guide the person through the enrollment poses."""
+        captured = sum(self.enroll_bins.values())
+        total = sum(ENROLL_BINS.values())
+        if self.enroll_bins["center"] < ENROLL_BINS["center"]:
+            ask = "look straight at the camera"
+        elif self.enroll_bins["side1"] < ENROLL_BINS["side1"]:
+            ask = "turn your head to one side ↔️"
+        else:
+            ask = "now turn your head to the other side ↔️"
+        return f"Capturing {captured}/{total} — {ask}"
+
+    def _scan_identify(self, clean, face, yaw):
+        """Scan phase 1: identify the person from frontal frames only."""
+        if abs(yaw) > YAW_FRONTAL:
+            return  # profile shots are unreliable for matching — wait
+
+        embedding = self.engine.embed(clean, face)
+        discord_id, name, score = self.engine.match(embedding, self.known_faces)
+        if discord_id is None or score < VOTE_SCORE:
+            return
+
+        # Log the capture locally so retune_faces.py can improve
+        # this person's stored embeddings later
+        face_log.save_capture(
+            discord_id, name, self.engine.crop_face(clean, face),
+            event=self.scan_action, score=score,
+        )
+
+        entry = self.match_votes.get(discord_id, (name, 0))
+        self.match_votes[discord_id] = (name, entry[1] + 1)
+
+        # Robustness: the winner needs MATCH_VOTES frontal votes AND a
+        # clear margin over any other candidate seen during this scan
+        votes = self.match_votes[discord_id][1]
+        rival_votes = max(
+            (v for other, (_, v) in self.match_votes.items() if other != discord_id),
+            default=0,
+        )
+        if votes < MATCH_VOTES or votes < 2 * rival_votes:
+            return
+
+        self.candidate = (discord_id, name)
+        self.candidate_frame = clean
+        if not LIVENESS_ENABLED:
+            self._finish_scan(discord_id, name, clean)
+            return
+        self.yaw_min = 0.0
+        self.yaw_max = 0.0
+        self.scan_deadline = time.time() + LIVENESS_SECONDS
+        self.set_message(
+            f"Hi {name}! Now slowly turn your head to one side, "
+            f"then the other ↔️", "#80cbc4"
+        )
+
+    def _scan_liveness(self, clean, face, yaw):
+        """Scan phase 2: head-turn challenge (a held-up photo can't pass)."""
+        self.yaw_min = min(self.yaw_min, yaw)
+        self.yaw_max = max(self.yaw_max, yaw)
+        side1_done = self.yaw_min <= -YAW_TURN
+        side2_done = self.yaw_max >= YAW_TURN
+
+        discord_id, name = self.candidate
+
+        # On frontal frames, keep verifying it's still the same person —
+        # if someone else clearly took over the frame, restart the scan
+        if abs(yaw) <= YAW_FRONTAL:
+            embedding = self.engine.embed(clean, face)
+            seen_id, _, score = self.engine.match(embedding, self.known_faces)
+            if seen_id == discord_id:
+                self.candidate_frame = clean  # freshest frontal photo
+            elif seen_id is not None and score >= VOTE_SCORE + 0.05:
+                self.candidate = None
+                self.match_votes = {}
+                self.set_message("Hmm, lost you — look straight at the camera...", "#ffb300")
+                return
+
+        if side1_done and side2_done:
+            self._finish_scan(discord_id, name, self.candidate_frame)
+            return
+
+        done = "✓" if side1_done or side2_done else "…"
+        self.set_message(
+            f"Hi {name}! Slowly turn your head side to side ↔️  "
+            f"(one side {done}, other side …)", "#80cbc4"
+        )
+
+    def _finish_scan(self, discord_id, name, clean_frame=None):
         self.state = "busy"
         self.cancel_btn.pack_forget()
         self.set_message(f"Hi {name}! One moment...", "#80cbc4")
         if self.scan_action == "checkin":
-            self._run_async(lambda: self.api.checkin(discord_id, name), "checkin")
+            photo_b64 = None
+            if SEND_PHOTO and clean_frame is not None:
+                ok, jpeg = cv2.imencode(
+                    ".jpg", clean_frame, [cv2.IMWRITE_JPEG_QUALITY, 85]
+                )
+                if ok:
+                    photo_b64 = base64.b64encode(jpeg.tobytes()).decode("ascii")
+            self._run_async(
+                lambda: self.api.checkin(discord_id, name, photo_b64), "checkin"
+            )
         else:
             self._run_async(lambda: self.api.checkout(discord_id), "checkout")
         self._recognized_name = name
@@ -342,6 +477,8 @@ class KioskApp:
                 text = f"✅ Welcome, {name} — checked in!"
                 if bonus:
                     text += f"\n{bonus}"
+                if result.get("photo_queued"):
+                    text += "\n📸 Your photo is heading to Discord!"
                 self._show_result(text, "#81c784")
 
         elif tag == "checkout":
@@ -395,45 +532,65 @@ class KioskApp:
         self.root.destroy()
 
 
-class EnrollDialog(tk.Toplevel):
-    """Pick an existing member or type a Discord ID + name, then capture."""
+class AddPersonDialog(tk.Toplevel):
+    """Add a person to the system and link their Discord account.
+
+    Search the Discord server by name (the API pulls member data straight
+    from Discord), pick from members already in the system, or enter an ID
+    manually. Then add them — with or without capturing their face.
+    """
 
     def __init__(self, app: KioskApp):
         super().__init__(app.root)
         self.app = app
-        self.title("Enroll Face")
+        self.title("Add Person")
         self.configure(bg=BG)
-        self.geometry("460x520")
+        self.geometry("520x600")
         self.transient(app.root)
         self.grab_set()
 
         tk.Label(
-            self, text="Who is enrolling?", font=(FONT, 16, "bold"),
+            self, text="👤 Add / Enroll a Person", font=(FONT, 16, "bold"),
             bg=BG, fg=FG,
         ).pack(pady=(14, 6))
 
-        tk.Label(
-            self, text="Pick yourself from the list (members the bot knows):",
-            font=(FONT, 11), bg=BG, fg="#9aa0a6",
-        ).pack()
+        # Search row
+        search_row = tk.Frame(self, bg=BG)
+        search_row.pack(fill="x", padx=14)
+        self.search_var = tk.StringVar()
+        search_entry = tk.Entry(
+            search_row, textvariable=self.search_var, font=(FONT, 12)
+        )
+        search_entry.pack(side="left", fill="x", expand=True, ipady=3)
+        search_entry.bind("<Return>", lambda e: self._search())
+        tk.Button(
+            search_row, text="🔍 Search Discord", font=(FONT, 11),
+            bg=BLUE, fg="white", bd=0, cursor="hand2", command=self._search,
+        ).pack(side="right", padx=(6, 0))
 
+        self.status_var = tk.StringVar(
+            value="Type a Discord name and press Search — or pick from the "
+                  "members below."
+        )
+        tk.Label(
+            self, textvariable=self.status_var, font=(FONT, 10),
+            bg=BG, fg="#9aa0a6", wraplength=480, justify="center",
+        ).pack(pady=(4, 2))
+
+        # Results list
         list_frame = tk.Frame(self, bg=BG)
         list_frame.pack(fill="both", expand=True, padx=14, pady=6)
-        self.member_list = tk.Listbox(
+        self.result_list = tk.Listbox(
             list_frame, font=(FONT, 12), bg="#1c2126", fg=FG,
-            selectbackground=BLUE, height=8,
+            selectbackground=BLUE, height=9,
         )
-        self.member_list.pack(side="left", fill="both", expand=True)
-        scroll = ttk.Scrollbar(list_frame, command=self.member_list.yview)
+        self.result_list.pack(side="left", fill="both", expand=True)
+        scroll = ttk.Scrollbar(list_frame, command=self.result_list.yview)
         scroll.pack(side="right", fill="y")
-        self.member_list.configure(yscrollcommand=scroll.set)
-        self.member_list.bind("<<ListboxSelect>>", self._on_pick)
+        self.result_list.configure(yscrollcommand=scroll.set)
+        self.result_list.bind("<<ListboxSelect>>", self._on_pick)
 
-        tk.Label(
-            self, text="…or enter manually (Discord ID + display name):",
-            font=(FONT, 11), bg=BG, fg="#9aa0a6",
-        ).pack(pady=(8, 2))
-
+        # Selected person
         form = tk.Frame(self, bg=BG)
         form.pack(padx=14, fill="x")
         tk.Label(form, text="Discord ID:", bg=BG, fg=FG,
@@ -448,60 +605,118 @@ class EnrollDialog(tk.Toplevel):
 
         tk.Label(
             self,
-            text="Enrollment is opt-in — only enroll your own face.\n"
-                 "(Discord ID: Settings → Advanced → Developer Mode,\n"
-                 "then right-click your name → Copy User ID)",
+            text="Face enrollment is opt-in — only enroll your own face.",
             font=(FONT, 10), bg=BG, fg="#9aa0a6", justify="center",
-        ).pack(pady=6)
+        ).pack(pady=(6, 2))
 
+        btn_row = tk.Frame(self, bg=BG)
+        btn_row.pack(pady=(4, 14))
         tk.Button(
-            self, text="📷 Start Capture", font=(FONT, 14, "bold"),
-            bg=BLUE, fg="white", bd=0, cursor="hand2", command=self._start,
-        ).pack(pady=10, ipadx=12, ipady=6)
+            btn_row, text="➕ Add Person", font=(FONT, 13, "bold"),
+            bg=GRAY, fg="white", bd=0, cursor="hand2",
+            command=lambda: self._add(enroll=False),
+        ).pack(side="left", padx=6, ipadx=10, ipady=6)
+        tk.Button(
+            btn_row, text="📷 Add + Enroll Face", font=(FONT, 13, "bold"),
+            bg=BLUE, fg="white", bd=0, cursor="hand2",
+            command=lambda: self._add(enroll=True),
+        ).pack(side="left", padx=6, ipadx=10, ipady=6)
 
-        self.members = []
-        self._load_members()
+        self.results = []
+        self._search()  # empty query -> show members already in the system
 
-    def _load_members(self):
+    def _set_results(self, results, status):
+        if not self.winfo_exists():
+            return
+        self.results = results
+        self.result_list.delete(0, "end")
+        for r in results:
+            tag = "in system" if r.get("source") == "system" else "Discord"
+            self.result_list.insert(
+                "end",
+                f"{r['display_name']}  (@{r['username']})  [{tag}]"
+            )
+        self.status_var.set(status)
+
+    def _search(self):
+        query = self.search_var.get().strip()
+        self.status_var.set("Searching...")
+
         def worker():
             try:
-                members = self.app.api.get_members()
-            except Exception:
-                members = []
-            self.members = members
-            def fill():
-                if not self.winfo_exists():
-                    return
-                self.member_list.delete(0, "end")
-                for m in members:
-                    self.member_list.insert(
-                        "end", f"{m['username']}  ({m['discord_id']})"
-                    )
-            self.app.root.after(0, fill)
+                if not query:
+                    members = self.app.api.get_members()
+                    results = [{
+                        "discord_id": m["discord_id"],
+                        "username": m["username"],
+                        "display_name": m["username"],
+                        "source": "system",
+                    } for m in members]
+                    status = f"{len(results)} members already in the system"
+                elif query.isdigit():
+                    user = self.app.api.discord_user(query)
+                    user["source"] = "discord"
+                    results = [user]
+                    status = "Found by Discord ID"
+                else:
+                    results = self.app.api.discord_search(query)
+                    for r in results:
+                        r["source"] = "discord"
+                    status = (f"{len(results)} Discord members match "
+                              f"“{query}”" if results
+                              else f"No Discord members match “{query}”")
+            except Exception as e:
+                detail = getattr(getattr(e, "response", None), "text", "") or str(e)
+                results, status = [], f"Search failed: {detail[:120]}"
+            self.app.root.after(0, lambda: self._set_results(results, status))
+
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_pick(self, _event):
-        sel = self.member_list.curselection()
-        if not sel or sel[0] >= len(self.members):
+        sel = self.result_list.curselection()
+        if not sel or sel[0] >= len(self.results):
             return
-        member = self.members[sel[0]]
+        person = self.results[sel[0]]
         self.id_entry.delete(0, "end")
-        self.id_entry.insert(0, member["discord_id"])
+        self.id_entry.insert(0, person["discord_id"])
         self.name_entry.delete(0, "end")
-        self.name_entry.insert(0, member["username"])
+        self.name_entry.insert(0, person["display_name"])
 
-    def _start(self):
+    def _add(self, enroll: bool):
         discord_id = self.id_entry.get().strip()
         name = self.name_entry.get().strip()
         if not discord_id.isdigit() or not name:
             messagebox.showerror(
-                "Enroll Face",
-                "Please pick a member or enter a numeric Discord ID and a name.",
+                "Add Person",
+                "Pick someone from the list (or enter a numeric Discord ID "
+                "and a name).",
                 parent=self,
             )
             return
-        self.destroy()
-        self.app.start_enrollment(discord_id, name)
+
+        self.status_var.set(f"Adding {name}...")
+
+        def worker():
+            try:
+                self.app.api.add_member(discord_id, name)
+            except Exception as e:
+                self.app.root.after(0, lambda: self.status_var.set(
+                    f"Could not add: {e}"))
+                return
+
+            def done():
+                if not self.winfo_exists():
+                    return
+                if enroll:
+                    self.destroy()
+                    self.app.start_enrollment(discord_id, name)
+                else:
+                    self.status_var.set(
+                        f"✅ {name} added and linked to Discord ID {discord_id}"
+                    )
+            self.app.root.after(0, done)
+
+        threading.Thread(target=worker, daemon=True).start()
 
 
 def main():

@@ -30,8 +30,25 @@ class ApiClient:
     def get_members(self):
         return self._get("/members")["members"]
 
-    def checkin(self, discord_id: str, username: str):
-        return self._post("/checkin", {"discord_id": discord_id, "username": username})
+    def checkin(self, discord_id: str, username: str, photo_b64: str | None = None):
+        payload = {"discord_id": discord_id, "username": username}
+        if photo_b64:
+            payload["photo_b64"] = photo_b64
+        return self._post("/checkin", payload)
+
+    def discord_search(self, query: str):
+        r = self.session.get(
+            f"{self.base_url}/discord/search",
+            params={"q": query}, timeout=self.timeout,
+        )
+        r.raise_for_status()
+        return r.json()["results"]
+
+    def discord_user(self, discord_id: str):
+        return self._get(f"/discord/user/{discord_id}")
+
+    def add_member(self, discord_id: str, username: str):
+        return self._post("/members", {"discord_id": discord_id, "username": username})
 
     def checkout(self, discord_id: str):
         return self._post("/checkout", {"discord_id": discord_id})

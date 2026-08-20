@@ -151,6 +151,19 @@ def init_database():
         )
     """)
 
+    # Kiosk check-in photos queued for the bot to post to Discord
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS kiosk_photos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            discord_id TEXT,
+            username TEXT,
+            photo_path TEXT,
+            bonuses TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            posted INTEGER DEFAULT 0
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -904,6 +917,47 @@ def record_streak_bonus(discord_id: str):
         conn.commit()
     except:
         pass  # Already recorded
+    conn.close()
+
+
+# ============ Kiosk Photo Operations ============
+
+def add_kiosk_photo(discord_id: str, username: str, photo_path: str,
+                    bonuses: str = "") -> int:
+    """Queue a kiosk check-in photo for the bot to post. Returns row id."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO kiosk_photos (discord_id, username, photo_path, bonuses)
+        VALUES (?, ?, ?, ?)
+    """, (discord_id, username, photo_path, bonuses))
+    row_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return row_id
+
+
+def get_unposted_kiosk_photos(limit: int = 10) -> list:
+    """Get queued kiosk photos that haven't been posted to Discord yet."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT * FROM kiosk_photos WHERE posted = 0
+        ORDER BY created_at ASC LIMIT ?
+    """, (limit,))
+    photos = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return photos
+
+
+def mark_kiosk_photo_posted(photo_id: int):
+    """Mark a kiosk photo as posted."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE kiosk_photos SET posted = 1 WHERE id = ?", (photo_id,)
+    )
+    conn.commit()
     conn.close()
 
 

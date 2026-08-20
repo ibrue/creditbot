@@ -49,6 +49,30 @@ KIOSK_API_KEY=<same key as step 3>
 
 Then `kiosk\start_kiosk.bat` launches the GUI.
 
+## Optional: fun AI captions for check-in photos
+
+When someone checks in at the kiosk, the bot posts their photo to the
+check-in channel. If you install [Ollama](https://ollama.com/download)
+on this PC and pull a vision model, a local LLM writes a playful,
+school-friendly caption for each photo (everything runs on this PC —
+no cloud):
+
+```
+ollama pull llava
+```
+
+On a slower PC use the much smaller model and set it in `.env`:
+
+```
+ollama pull moondream
+```
+```
+OLLAMA_MODEL=moondream
+```
+
+No Ollama? No problem — photos post without captions. Turn photo posting
+off entirely with `KIOSK_POST_PHOTOS=0` in `.env`.
+
 ## Auto-start on boot
 
 Press `Win+R`, type `shell:startup`, Enter — then put shortcuts to

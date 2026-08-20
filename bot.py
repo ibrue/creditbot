@@ -30,6 +30,7 @@ class SocialCreditBot(commands.Bot):
             "cogs.checkin",
             "cogs.social_credit",
             "cogs.leaderboard",
+            "cogs.kiosk_feed",
         ]
 
         for cog in cogs:

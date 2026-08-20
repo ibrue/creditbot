@@ -52,6 +52,23 @@ class FaceEngine:
         return best
 
     @staticmethod
+    def yaw_ratio(face_row) -> float:
+        """Estimate horizontal head turn from YuNet's landmarks.
+
+        Returns the nose offset from the eye midpoint, normalized by the
+        eye distance: ~0 facing the camera, roughly ±0.3+ when the head is
+        clearly turned to a side. Used for the liveness check and for
+        pose-guided enrollment.
+        """
+        right_eye_x, left_eye_x = float(face_row[4]), float(face_row[6])
+        nose_x = float(face_row[8])
+        eye_dist = abs(left_eye_x - right_eye_x)
+        if eye_dist < 1.0:
+            return 0.0
+        mid_x = (left_eye_x + right_eye_x) / 2.0
+        return (nose_x - mid_x) / eye_dist
+
+    @staticmethod
     def crop_face(frame_bgr, face_row, margin: float = 0.35):
         """Cut the face out of the frame with some margin around it.
 
