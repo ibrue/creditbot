@@ -161,6 +161,28 @@ robotics-social-credit/
 └── README.md
 ```
 
+## Running the Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+The suite runs entirely offline against a throwaway SQLite database — it
+never touches your real `social_credit.db`, and it stubs out Discord and
+Ollama, so no bot token or local model is needed.
+
+```
+tests/test_helpers.py        formatting, tiers, streak messages
+tests/test_database.py       credits, check-ins, streaks, votes, audits
+tests/test_checkin_logic.py  kiosk check-in bonuses (matches Discord rules)
+tests/test_api.py            kiosk HTTP API and its authentication
+tests/test_caption.py        local-LLM captions and the safety filter
+```
+
+Three tests are marked `xfail` — they describe credit-accounting bugs that
+are still open, and will start failing (loudly) once those are fixed.
+
 ## Customization
 
 Edit `config.py` to change:
