@@ -53,26 +53,45 @@ ever crashes).
 ## Optional: fun AI captions for check-in photos
 
 When someone checks in at the kiosk, the bot posts their photo to the
-check-in channel. If you install [Ollama](https://ollama.com/download)
-on this PC and pull a vision model, a local LLM writes a playful,
-school-friendly caption for each photo (everything runs on this PC —
-no cloud):
+check-in channel. A local LLM (Ollama) can add a playful,
+school-friendly caption to each photo — everything runs on this PC, no
+cloud.
 
-```
-ollama pull llava
-```
-
-On a slower PC use the much smaller model and set it in `.env`:
-
-```
-ollama pull moondream
-```
-```
-OLLAMA_MODEL=moondream
-```
+Double-click **`setup_ollama.bat`**. It installs Ollama (via winget, or
+the official installer as a fallback), picks a vision model that fits
+this PC's RAM (`llava`, or the smaller `moondream` under 12 GB),
+downloads it, and sets `OLLAMA_MODEL` in `.env`. Then restart
+`start_server.bat`.
 
 No Ollama? No problem — photos post without captions. Turn photo posting
 off entirely with `KIOSK_POST_PHOTOS=0` in `.env`.
+
+## Where your data lives (and moving it to Documents)
+
+By default everything stays in the project folder: `social_credit.db`
+(the database), `kiosk_uploads\` (photos waiting to post — deleted after
+posting), `kiosk\face_log\` (face captures), `kiosk\models\` (the face
+models), and the two `.env` files. Ollama keeps its AI models in
+`C:\Users\<you>\.ollama`.
+
+To keep the data in your Documents folder instead, set these in the
+`.env` files (`%USERPROFILE%` expands to `C:\Users\<you>`, and the
+folders are created automatically):
+
+In the project's `.env`:
+```
+DATABASE_PATH=%USERPROFILE%\Documents\CreditBot\social_credit.db
+KIOSK_UPLOADS_DIR=%USERPROFILE%\Documents\CreditBot\checkin_photos
+```
+
+In `kiosk\.env`:
+```
+KIOSK_FACE_LOG_DIR=%USERPROFILE%\Documents\CreditBot\faces
+```
+
+If you already have data, move the existing `social_credit.db` into the
+new folder before restarting. Updates never touch any of these files
+either way.
 
 ## Automatic updates from GitHub
 

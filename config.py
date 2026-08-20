@@ -3,6 +3,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def expand_path(path: str) -> str:
+    """Expand ~ and environment variables (%USERPROFILE%, $HOME) in paths
+    so .env entries like %USERPROFILE%\\Documents\\CreditBot work."""
+    return os.path.expanduser(os.path.expandvars(path))
+
 # Discord Bot Token - Get this from https://discord.com/developers/applications
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "your-bot-token-here")
 
@@ -16,13 +22,13 @@ MEMES_CHANNEL_ID = int(os.getenv("MEMES_CHANNEL_ID", "0"))  # Optional
 NOTEBOOKING_CHANNEL_ID = int(os.getenv("NOTEBOOKING_CHANNEL_ID", "0"))  # Auto documentation credits
 
 # Database
-DATABASE_PATH = os.getenv("DATABASE_PATH", "social_credit.db")
+DATABASE_PATH = expand_path(os.getenv("DATABASE_PATH", "social_credit.db"))
 
 # Kiosk photo posting
 # When the kiosk sends a check-in photo, the bot posts it to the check-in
 # channel. Set KIOSK_POST_PHOTOS=0 to disable posting.
 KIOSK_POST_PHOTOS = os.getenv("KIOSK_POST_PHOTOS", "1") == "1"
-KIOSK_UPLOADS_DIR = os.getenv("KIOSK_UPLOADS_DIR", "kiosk_uploads")
+KIOSK_UPLOADS_DIR = expand_path(os.getenv("KIOSK_UPLOADS_DIR", "kiosk_uploads"))
 
 # Local LLM captions (optional) — a vision model via Ollama writes a fun,
 # school-friendly caption for kiosk check-in photos. Install Ollama and

@@ -22,10 +22,12 @@ from datetime import datetime
 import cv2
 
 ENABLED = os.getenv("KIOSK_FACE_LOG", "1") == "1"
-LOG_DIR = os.getenv(
+# ~ and %USERPROFILE%-style variables are expanded, so a Documents folder
+# like %USERPROFILE%\Documents\CreditBot\faces works in .env
+LOG_DIR = os.path.expanduser(os.path.expandvars(os.getenv(
     "KIOSK_FACE_LOG_DIR",
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "face_log"),
-)
+)))
 
 # Oldest captures are pruned beyond this many files per person
 MAX_FILES_PER_PERSON = 500
