@@ -1,4 +1,6 @@
 import asyncio
+import traceback
+
 import discord
 from discord.ext import commands
 import config
@@ -39,6 +41,26 @@ class SocialCreditBot(commands.Bot):
                 print(f"Loaded {cog}")
             except Exception as e:
                 print(f"Failed to load {cog}: {e}")
+
+        # Log slash-command errors and tell the user instead of failing silently
+        self.tree.on_error = self.on_app_command_error
+
+    async def on_error(self, event_method: str, *args, **kwargs):
+        """Log unexpected event-handler errors instead of dying silently."""
+        print(f"⚠️ Unhandled error in {event_method}:")
+        traceback.print_exc()
+
+    async def on_app_command_error(self, interaction: discord.Interaction, error):
+        print(f"⚠️ Slash command error in /{getattr(interaction.command, 'name', '?')}: {error}")
+        traceback.print_exception(type(error), error, error.__traceback__)
+        try:
+            msg = "⚠️ Something went wrong running that command — try again in a moment."
+            if interaction.response.is_done():
+                await interaction.followup.send(msg, ephemeral=True)
+            else:
+                await interaction.response.send_message(msg, ephemeral=True)
+        except Exception:
+            pass
 
     async def on_ready(self):
         # Only sync commands once per session

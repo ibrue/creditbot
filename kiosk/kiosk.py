@@ -117,6 +117,8 @@ class KioskApp:
         self.last_enroll_capture = 0.0
         self.result_until = 0.0
         self.api_queue = queue.Queue()
+        self.last_face_refresh = time.time()
+        self.failed_reads = 0
 
         self._build_ui()
         self._refresh_faces_async()
@@ -252,15 +254,43 @@ class KioskApp:
 
         ok, frame = self.cap.read()
         if ok:
+            self.failed_reads = 0
             frame = cv2.flip(frame, 1)  # mirror view feels natural
             self._process_frame(frame)
             self._draw_frame(frame)
+        else:
+            # Webcams occasionally drop out (USB hiccup, another app grabbed
+            # it). After ~3s of failed reads, reopen the camera so the kiosk
+            # recovers on its own instead of freezing until someone reboots it
+            self.failed_reads += 1
+            if self.failed_reads >= 100:
+                self.failed_reads = 0
+                print("⚠️ Camera stopped responding — reopening...")
+                self._reopen_camera()
+
+        # Refresh enrolled faces every 5 minutes so new enrollments from
+        # other kiosks appear, and a dropped connection self-heals
+        if self.state == "idle" and time.time() - self.last_face_refresh > 300:
+            self.last_face_refresh = time.time()
+            self._refresh_faces_async()
 
         if self.state == "result" and time.time() > self.result_until:
             self.state = "idle"
             self.set_message("")
 
         self.root.after(30, self._tick)
+
+    def _reopen_camera(self):
+        try:
+            self.cap.release()
+        except Exception:
+            pass
+        if sys.platform == "win32":
+            self.cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_DSHOW)
+        else:
+            self.cap = cv2.VideoCapture(CAMERA_INDEX)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
     def _process_frame(self, frame):
         if self.state == "scanning":

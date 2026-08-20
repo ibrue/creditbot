@@ -18,11 +18,11 @@ and extract it (e.g. to `C:\creditbot`), or:
 git clone https://github.com/ibrue/creditbot.git
 ```
 
-## 3. Set up the server (bot + API)
+## 3. Run it
 
-Double-click **`setup_server.bat`** in the project folder. It creates a
-virtual environment, installs dependencies, and opens `.env` in Notepad.
-Fill in:
+Double-click **`start_server.bat`** — that's it. On first run it installs
+everything itself (virtual environment, dependencies) and opens `.env` in
+Notepad. Fill in:
 
 - `DISCORD_TOKEN` — your bot token
 - `CHECKIN_CHANNEL_ID` / `ANNOUNCEMENTS_CHANNEL_ID`
@@ -31,23 +31,24 @@ Fill in:
 **Already have a database?** Keep `social_credit.db` in the project
 folder — it's picked up automatically.
 
-## 4. Run it
+One console window runs both the Discord bot and the kiosk API
+(port 8765). Leave it open; logs show check-ins as they happen, and if
+the server ever crashes it restarts itself after 5 seconds (close the
+window to actually stop it).
 
-Double-click **`start_server.bat`**. One console window runs both the
-Discord bot and the kiosk API (port 8765). Leave it open; logs show
-check-ins as they happen.
+## 4. Set up the kiosk GUI (same PC)
 
-## 5. Set up the kiosk GUI (same PC)
-
-Follow [kiosk/README.md](kiosk/README.md): double-click
-`kiosk\setup_kiosk.bat`, and in the kiosk `.env` use:
+Double-click **`kiosk\start_kiosk.bat`** — it also installs its own
+dependencies and downloads the face models on first run, then opens the
+kiosk `.env`; use:
 
 ```
 KIOSK_API_URL=http://localhost:8765
 KIOSK_API_KEY=<same key as step 3>
 ```
 
-Then `kiosk\start_kiosk.bat` launches the GUI.
+Save, close Notepad, and the kiosk launches (it also auto-restarts if it
+ever crashes).
 
 ## Optional: fun AI captions for check-in photos
 

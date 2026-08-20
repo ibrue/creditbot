@@ -110,6 +110,14 @@ class LeaderboardCog(commands.Cog):
     @tasks.loop(time=time(hour=config.WEEKLY_ANNOUNCEMENT_HOUR, minute=0))
     async def weekly_announcement(self):
         """Post weekly leaderboard and reset scores."""
+        # An unhandled exception here would silently kill ALL future
+        # weekly announcements until a restart — never let one escape
+        try:
+            await self._weekly_announcement()
+        except Exception as e:
+            print(f"⚠️ Weekly announcement failed: {e}")
+
+    async def _weekly_announcement(self):
         # Only run on the configured day
         today = datetime.now().strftime("%A").lower()
         if today != config.WEEKLY_ANNOUNCEMENT_DAY:
@@ -253,6 +261,12 @@ class LeaderboardCog(commands.Cog):
     @tasks.loop(time=time(hour=config.DAILY_LEADERBOARD_HOUR, minute=0))
     async def daily_leaderboard(self):
         """Post daily leaderboard at 7 PM."""
+        try:
+            await self._daily_leaderboard()
+        except Exception as e:
+            print(f"⚠️ Daily leaderboard failed (will retry tomorrow): {e}")
+
+    async def _daily_leaderboard(self):
         if config.ANNOUNCEMENTS_CHANNEL_ID == 0:
             channel_id = config.CHECKIN_CHANNEL_ID
         else:

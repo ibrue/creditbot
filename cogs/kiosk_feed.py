@@ -28,6 +28,12 @@ class KioskFeedCog(commands.Cog):
 
     @tasks.loop(seconds=10)
     async def post_kiosk_photos(self):
+        try:
+            await self._post_kiosk_photos()
+        except Exception as e:
+            print(f"⚠️ Kiosk photo posting failed (will retry): {e}")
+
+    async def _post_kiosk_photos(self):
         if not config.KIOSK_POST_PHOTOS or config.CHECKIN_CHANNEL_ID == 0:
             return
 

@@ -27,12 +27,16 @@ kiosk machine. Anyone can be removed completely (see below).
 2. Get this repo onto the PC — either
    [download the ZIP](https://github.com/ibrue/creditbot/archive/refs/heads/main.zip)
    and extract it, or `git clone https://github.com/ibrue/creditbot.git`.
-3. Open the `creditbot\kiosk` folder and double-click **`setup_kiosk.bat`**.
-   It creates a virtual environment, installs dependencies, downloads the
-   two face models (~40 MB), and opens `.env` in Notepad — fill in:
-   - `KIOSK_API_URL=http://<your-nas-ip>:8765`
-   - `KIOSK_API_KEY=` the same key as in the `.env` on the NAS
-4. Double-click **`start_kiosk.bat`** to run it.
+3. Open the `creditbot\kiosk` folder and double-click **`start_kiosk.bat`**.
+   On first run it installs everything itself — virtual environment,
+   dependencies, the two face models (~40 MB) — and opens `.env` in
+   Notepad; fill in:
+   - `KIOSK_API_URL=` — `http://localhost:8765` if the same PC runs the
+     server, or `http://<server-ip>:8765`
+   - `KIOSK_API_KEY=` — the same key as in the server's `.env`
+
+   Save, close Notepad, and the kiosk starts. It auto-restarts itself if
+   it ever crashes (close the console window to stop it).
 
 To auto-start on boot: press `Win+R`, type `shell:startup`, Enter, and put
 a shortcut to `start_kiosk.bat` in that folder (pair with Windows
@@ -43,25 +47,16 @@ auto-login for a true appliance setup).
 Requires Python 3.10+, a webcam, and a desktop session (X11/Wayland).
 
 ```bash
+sudo apt install python3-tk python3-venv   # Debian/Ubuntu/Raspberry Pi OS
 git clone https://github.com/ibrue/creditbot.git
 cd creditbot/kiosk
-
-# Tkinter comes from the OS package manager:
-sudo apt install python3-tk        # Debian/Ubuntu/Raspberry Pi OS
-
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python download_models.py          # fetches the two ONNX models (~40 MB)
-
-cp .env.example .env
-nano .env                          # set KIOSK_API_URL (NAS IP) and KIOSK_API_KEY
-
-python kiosk.py
+./run_kiosk.sh
 ```
 
-For auto-start on boot, see `creditbot-kiosk.service` (systemd user
-service).
+`run_kiosk.sh` installs its own dependencies and models on first run,
+creates `.env` for you to fill in (KIOSK_API_URL, KIOSK_API_KEY), and
+auto-restarts the kiosk if it crashes. For auto-start on boot, see
+`creditbot-kiosk.service` (systemd user service).
 
 ## Using it
 

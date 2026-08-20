@@ -70,7 +70,8 @@ ROAST_THRESHOLD = 5  # Number of fire reactions for -1 credit
 NOTEBOOK_UPVOTE_EMOJI = "👍"
 NOTEBOOK_DOWNVOTE_EMOJI = "👎"
 NOTEBOOK_VOTES_REQUIRED = 3  # Net positive votes needed for points
-NOTEBOOK_DOWNVOTE_PENALTY = -2  # Points lost if net negative
+NOTEBOOK_DOWNVOTES_REQUIRED = 3  # Net negative votes needed for penalty
+NOTEBOOK_DOWNVOTE_PENALTY = -2  # Points lost when rejected
 
 # Magic smoke voting
 MAGIC_SMOKE_VOTES_REQUIRED = 3
