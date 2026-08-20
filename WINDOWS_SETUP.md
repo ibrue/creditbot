@@ -66,6 +66,33 @@ downloads it, and sets `OLLAMA_MODEL` in `.env`. Then restart
 No Ollama? No problem — photos post without captions. Turn photo posting
 off entirely with `KIOSK_POST_PHOTOS=0` in `.env`.
 
+## Where your data lives (and moving it to Documents)
+
+By default everything stays in the project folder: `social_credit.db`
+(the database), `kiosk_uploads\` (photos waiting to post — deleted after
+posting), `kiosk\face_log\` (face captures), `kiosk\models\` (the face
+models), and the two `.env` files. Ollama keeps its AI models in
+`C:\Users\<you>\.ollama`.
+
+To keep the data in your Documents folder instead, set these in the
+`.env` files (`%USERPROFILE%` expands to `C:\Users\<you>`, and the
+folders are created automatically):
+
+In the project's `.env`:
+```
+DATABASE_PATH=%USERPROFILE%\Documents\CreditBot\social_credit.db
+KIOSK_UPLOADS_DIR=%USERPROFILE%\Documents\CreditBot\checkin_photos
+```
+
+In `kiosk\.env`:
+```
+KIOSK_FACE_LOG_DIR=%USERPROFILE%\Documents\CreditBot\faces
+```
+
+If you already have data, move the existing `social_credit.db` into the
+new folder before restarting. Updates never touch any of these files
+either way.
+
 ## Automatic updates from GitHub
 
 If you installed with `git clone` (recommended — install

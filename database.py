@@ -1,3 +1,4 @@
+import os
 import sqlite3
 from datetime import datetime, date, timedelta
 from typing import Optional
@@ -10,6 +11,11 @@ def get_connection():
     WAL mode + busy timeout let the bot and the kiosk API share the
     database from separate processes without "database is locked" errors.
     """
+    # SQLite won't create missing parent folders (e.g. a Documents
+    # subfolder configured via DATABASE_PATH) — do it ourselves
+    parent = os.path.dirname(config.DATABASE_PATH)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
     conn = sqlite3.connect(config.DATABASE_PATH, timeout=15)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
