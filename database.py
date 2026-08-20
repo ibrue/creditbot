@@ -5,9 +5,16 @@ import config
 
 
 def get_connection():
-    """Get a database connection with row factory."""
-    conn = sqlite3.connect(config.DATABASE_PATH)
+    """Get a database connection with row factory.
+
+    WAL mode + busy timeout let the bot and the kiosk API share the
+    database from separate processes without "database is locked" errors.
+    """
+    conn = sqlite3.connect(config.DATABASE_PATH, timeout=15)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA synchronous=NORMAL")
     return conn
 
 
@@ -139,6 +146,71 @@ def init_database():
             UNIQUE(discord_id, date)
         )
     """)
+
+    # Face encodings for the kiosk (opt-in enrollment; embedding is a JSON array)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS face_encodings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            discord_id TEXT,
+            name TEXT,
+            embedding TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # Kiosk check-in photos queued for the bot to post to Discord
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS kiosk_photos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            discord_id TEXT,
+            username TEXT,
+            photo_path TEXT,
+            bonuses TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            posted INTEGER DEFAULT 0
+        )
+    """)
+
+    # Migration: roasted_messages gained a created_at column so old rows
+    # can be pruned (the table used to grow forever — one message tracked
+    # per server message)
+    try:
+        cursor.execute("ALTER TABLE roasted_messages ADD COLUMN created_at TIMESTAMP")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    conn.commit()
+    conn.close()
+
+
+def prune_old_data(days: int = 14):
+    """Delete stale tracking rows so the database doesn't grow forever.
+
+    Only touches ephemeral tracking tables — user data, credits,
+    transactions, and check-in history are never pruned.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cutoff = datetime.now() - timedelta(days=days)
+
+    # Roast tracking: one row per server message; roasting only matters
+    # for recent messages. Legacy rows (NULL created_at) predate the
+    # migration and are old by definition.
+    cursor.execute("""
+        DELETE FROM roasted_messages
+        WHERE created_at IS NULL OR created_at < ?
+    """, (cutoff,))
+
+    # Magic smoke votes only count within 24h; keep a month for history
+    cursor.execute("""
+        DELETE FROM magic_smoke_votes
+        WHERE timestamp < ?
+    """, (datetime.now() - timedelta(days=30),))
+
+    # Daily one-shot bonus markers
+    old_date = (date.today() - timedelta(days=days)).isoformat()
+    for table in ("meme_credits", "weekend_bonus", "streak_bonus"):
+        cursor.execute(f"DELETE FROM {table} WHERE date < ?", (old_date,))
 
     conn.commit()
     conn.close()
@@ -756,8 +828,9 @@ def track_roasted_message(message_id: str, discord_id: str):
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            INSERT INTO roasted_messages (message_id, discord_id) VALUES (?, ?)
-        """, (message_id, discord_id))
+            INSERT INTO roasted_messages (message_id, discord_id, created_at)
+            VALUES (?, ?, ?)
+        """, (message_id, discord_id, datetime.now()))
         conn.commit()
     except sqlite3.IntegrityError:
         pass
@@ -828,16 +901,38 @@ def get_notebook_submission(message_id: str) -> Optional[dict]:
     return dict(result) if result else None
 
 
-def resolve_notebook_submission(message_id: str, result: str):
-    """Mark a notebook submission as resolved with result (approved/rejected)."""
+def resolve_notebook_submission(message_id: str, result: str) -> bool:
+    """Atomically resolve a notebook submission.
+
+    Returns True only for the caller that actually flipped it from
+    unresolved to resolved — so two near-simultaneous reaction events
+    can't both award credits.
+    """
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
         UPDATE notebook_submissions SET resolved = 1, result = ?
-        WHERE message_id = ?
+        WHERE message_id = ? AND resolved = 0
     """, (result, message_id))
+    won = cursor.rowcount > 0
     conn.commit()
     conn.close()
+    return won
+
+
+def get_unresolved_notebook_submissions(days: int = 14) -> list:
+    """Get recent submissions still awaiting votes (for the sweep task)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cutoff = datetime.now() - timedelta(days=days)
+    cursor.execute("""
+        SELECT * FROM notebook_submissions
+        WHERE resolved = 0 AND submitted_at > ?
+        ORDER BY submitted_at ASC
+    """, (cutoff,))
+    rows = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return rows
 
 
 # ============ Weekend Bonus Operations ============
@@ -894,6 +989,101 @@ def record_streak_bonus(discord_id: str):
     except:
         pass  # Already recorded
     conn.close()
+
+
+# ============ Kiosk Photo Operations ============
+
+def add_kiosk_photo(discord_id: str, username: str, photo_path: str,
+                    bonuses: str = "") -> int:
+    """Queue a kiosk check-in photo for the bot to post. Returns row id."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO kiosk_photos (discord_id, username, photo_path, bonuses)
+        VALUES (?, ?, ?, ?)
+    """, (discord_id, username, photo_path, bonuses))
+    row_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return row_id
+
+
+def get_unposted_kiosk_photos(limit: int = 10) -> list:
+    """Get queued kiosk photos that haven't been posted to Discord yet."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT * FROM kiosk_photos WHERE posted = 0
+        ORDER BY created_at ASC LIMIT ?
+    """, (limit,))
+    photos = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return photos
+
+
+def mark_kiosk_photo_posted(photo_id: int):
+    """Mark a kiosk photo as posted."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE kiosk_photos SET posted = 1 WHERE id = ?", (photo_id,)
+    )
+    conn.commit()
+    conn.close()
+
+
+# ============ Face Encoding Operations (kiosk) ============
+
+def save_face_encoding(discord_id: str, name: str, embedding_json: str) -> int:
+    """Save a face encoding sample for a user. Returns the row id."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO face_encodings (discord_id, name, embedding)
+        VALUES (?, ?, ?)
+    """, (discord_id, name, embedding_json))
+    row_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return row_id
+
+
+def get_face_encodings() -> list:
+    """Get all enrolled face encodings."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, discord_id, name, embedding, created_at FROM face_encodings
+    """)
+    rows = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return rows
+
+
+def delete_face_encodings(discord_id: str) -> int:
+    """Delete all face encodings for a user. Returns number deleted."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "DELETE FROM face_encodings WHERE discord_id = ?", (discord_id,)
+    )
+    deleted = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return deleted
+
+
+def get_all_users() -> list:
+    """Get all users (for the kiosk enrollment picker)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT discord_id, username, total_credits FROM users
+        ORDER BY username COLLATE NOCASE
+    """)
+    users = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return users
 
 
 # ============ Audit Operations ============

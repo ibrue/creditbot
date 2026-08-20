@@ -1,8 +1,19 @@
 # Environment variables (contains secrets)
 .env
+kiosk/.env
 
 # Database (user data)
 *.db
+data/
+
+# Kiosk face models (downloaded by kiosk/download_models.py)
+kiosk/models/
+
+# Kiosk local face capture log (biometric data - never commit)
+kiosk/face_log/
+
+# Queued kiosk check-in photos (deleted after posting - never commit)
+kiosk_uploads/
 
 # Python
 __pycache__/

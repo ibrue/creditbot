@@ -38,6 +38,14 @@ class CheckinCog(commands.Cog):
     @tasks.loop(time=time(hour=config.DAILY_CHECKIN_HOUR, minute=0))
     async def daily_checkin_post(self):
         """Post the daily check-in message."""
+        # An unhandled exception would permanently stop this loop until
+        # the next bot restart — never let one escape
+        try:
+            await self._daily_checkin_post()
+        except Exception as e:
+            print(f"⚠️ Daily check-in post failed (will retry tomorrow): {e}")
+
+    async def _daily_checkin_post(self):
         if config.CHECKIN_CHANNEL_ID == 0:
             return
 
@@ -78,6 +86,15 @@ class CheckinCog(commands.Cog):
     @tasks.loop(hours=1)
     async def auto_checkout(self):
         """Auto-checkout users who forgot to check out."""
+        try:
+            await self._auto_checkout()
+            # Piggyback hourly maintenance: prune stale tracking rows so
+            # the database doesn't grow unbounded over a season
+            database.prune_old_data()
+        except Exception as e:
+            print(f"⚠️ Auto-checkout sweep failed (will retry next hour): {e}")
+
+    async def _auto_checkout(self):
         stale = database.get_stale_checkins(config.AUTO_CHECKOUT_HOURS)
 
         for checkin in stale:

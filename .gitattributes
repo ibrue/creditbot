@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Batch files need CRLF (goto/labels can misbehave with LF)
+*.bat text eol=crlf

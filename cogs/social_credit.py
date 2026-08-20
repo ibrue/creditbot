@@ -1,5 +1,5 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 from datetime import datetime, timedelta
 import config
@@ -23,6 +23,10 @@ class SocialCreditCog(commands.Cog):
         # Track processed interactions to prevent duplicates
         self._processed_interactions = set()
         self._max_tracked_interactions = 1000  # Prevent memory leak
+        self.notebook_sweep.start()
+
+    def cog_unload(self):
+        self.notebook_sweep.cancel()
 
     def _check_duplicate(self, interaction_id: int) -> bool:
         """Check if this interaction was already processed. Returns True if duplicate."""
@@ -237,121 +241,190 @@ class SocialCreditCog(commands.Cog):
         if message.channel.id != config.CHECKIN_CHANNEL_ID:
             database.track_roasted_message(str(message.id), str(message.author.id))
 
+    # ---------- Notebook voting ----------
+    #
+    # Reliability notes: votes are tallied by enumerating the actual users
+    # on each reaction (never `count - 1`, which breaks if the bot's seed
+    # reaction is missing), the author's and bot's votes are excluded, both
+    # reaction ADD and REMOVE re-tally, resolution is atomic in the
+    # database (no double awards from simultaneous reactions), and a
+    # periodic sweep catches votes cast while the bot was offline.
+
+    async def _tally_notebook_votes(self, message: discord.Message,
+                                    author_id: str) -> tuple[int, int]:
+        """Count unique up/down voters, excluding the bot and the author."""
+        upvoters, downvoters = set(), set()
+        for reaction in message.reactions:
+            emoji = str(reaction.emoji)
+            if emoji not in (config.NOTEBOOK_UPVOTE_EMOJI, config.NOTEBOOK_DOWNVOTE_EMOJI):
+                continue
+            async for user in reaction.users():
+                if user.id == self.bot.user.id or str(user.id) == author_id:
+                    continue
+                if emoji == config.NOTEBOOK_UPVOTE_EMOJI:
+                    upvoters.add(user.id)
+                else:
+                    downvoters.add(user.id)
+        return len(upvoters), len(downvoters)
+
+    async def _evaluate_notebook(self, message: discord.Message, submission: dict):
+        """Tally votes and resolve the submission if a threshold is met."""
+        upvotes, downvotes = await self._tally_notebook_votes(
+            message, submission['discord_id']
+        )
+        net_votes = upvotes - downvotes
+
+        if net_votes >= config.NOTEBOOK_VOTES_REQUIRED:
+            # Atomic: only one event/sweep wins the resolve
+            if not database.resolve_notebook_submission(str(message.id), 'approved'):
+                return
+            user = await self.bot.fetch_user(int(submission['discord_id']))
+            database.add_credits(
+                submission['discord_id'], user.name,
+                config.CREDITS['documentation'],
+                f"Notebook entry approved! ({upvotes} upvotes)"
+            )
+            await message.reply(
+                f"✅ **Notebook Entry Approved!**\n"
+                f"{user.mention} earned **+{config.CREDITS['documentation']}** credits!\n"
+                f"Votes: {upvotes} 👍 / {downvotes} 👎"
+            )
+
+        elif net_votes <= -config.NOTEBOOK_DOWNVOTES_REQUIRED:
+            if not database.resolve_notebook_submission(str(message.id), 'rejected'):
+                return
+            user = await self.bot.fetch_user(int(submission['discord_id']))
+            database.add_credits(
+                submission['discord_id'], user.name,
+                config.NOTEBOOK_DOWNVOTE_PENALTY,
+                f"Notebook entry rejected ({downvotes} downvotes)"
+            )
+            await message.reply(
+                f"❌ **Notebook Entry Rejected!**\n"
+                f"{user.mention} lost **{config.NOTEBOOK_DOWNVOTE_PENALTY}** credits\n"
+                f"Votes: {upvotes} 👍 / {downvotes} 👎"
+            )
+
+    async def _handle_notebook_event(self, payload: discord.RawReactionActionEvent):
+        """Shared handler for notebook vote reactions (add or remove)."""
+        # Cheap DB check first — avoids fetching the message (and burning
+        # rate limit) for reactions that aren't on a tracked submission
+        submission = database.get_notebook_submission(str(payload.message_id))
+        if not submission or submission['resolved']:
+            return
+
+        channel = self.bot.get_channel(payload.channel_id)
+        if not channel:
+            return
+        try:
+            message = await channel.fetch_message(payload.message_id)
+        except discord.NotFound:
+            database.resolve_notebook_submission(str(payload.message_id), 'deleted')
+            return
+        except Exception as e:
+            print(f"⚠️ Notebook vote: could not fetch message: {e}")
+            return  # The sweep task will catch this vote later
+
+        await self._evaluate_notebook(message, submission)
+
+    @tasks.loop(minutes=10)
+    async def notebook_sweep(self):
+        """Re-check unresolved submissions — catches votes cast while the
+        bot was offline or events that were dropped."""
+        try:
+            if config.NOTEBOOKING_CHANNEL_ID == 0:
+                return
+            channel = self.bot.get_channel(config.NOTEBOOKING_CHANNEL_ID)
+            if not channel:
+                return
+            for submission in database.get_unresolved_notebook_submissions():
+                try:
+                    message = await channel.fetch_message(int(submission['message_id']))
+                except discord.NotFound:
+                    database.resolve_notebook_submission(
+                        submission['message_id'], 'deleted'
+                    )
+                    continue
+                except Exception as e:
+                    print(f"⚠️ Notebook sweep: could not fetch {submission['message_id']}: {e}")
+                    continue
+                await self._evaluate_notebook(message, submission)
+        except Exception as e:
+            print(f"⚠️ Notebook sweep failed (will retry): {e}")
+
+    @notebook_sweep.before_loop
+    async def before_notebook_sweep(self):
+        await self.bot.wait_until_ready()
+
     @commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
         """Track reactions for roasting and notebook voting."""
+        try:
+            await self._on_reaction_event(payload, added=True)
+        except Exception as e:
+            print(f"⚠️ Reaction handler failed: {e}")
+
+    @commands.Cog.listener()
+    async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent):
+        """Removed votes re-tally notebook submissions too."""
+        try:
+            emoji = str(payload.emoji)
+            if emoji in (config.NOTEBOOK_UPVOTE_EMOJI, config.NOTEBOOK_DOWNVOTE_EMOJI):
+                await self._handle_notebook_event(payload)
+        except Exception as e:
+            print(f"⚠️ Reaction-remove handler failed: {e}")
+
+    async def _on_reaction_event(self, payload: discord.RawReactionActionEvent,
+                                 added: bool):
         emoji = str(payload.emoji)
 
         # Ignore bot reactions
         if payload.user_id == self.bot.user.id:
             return
 
-        # Get the channel and message
+        # Notebook voting
+        if emoji in (config.NOTEBOOK_UPVOTE_EMOJI, config.NOTEBOOK_DOWNVOTE_EMOJI):
+            await self._handle_notebook_event(payload)
+            return
+
+        # Roasting (fire emoji) — DB checks first, fetch only when needed
+        if emoji != config.ROAST_EMOJI:
+            return
+        if database.is_message_roasted(str(payload.message_id)):
+            return
+        author_id = database.get_roasted_message_author(str(payload.message_id))
+        if not author_id or author_id == str(self.bot.user.id):
+            return
+
         channel = self.bot.get_channel(payload.channel_id)
         if not channel:
             return
-
         try:
             message = await channel.fetch_message(payload.message_id)
-        except:
+        except Exception:
             return
 
-        # Handle notebook voting
-        if emoji in [config.NOTEBOOK_UPVOTE_EMOJI, config.NOTEBOOK_DOWNVOTE_EMOJI]:
-            submission = database.get_notebook_submission(str(message.id))
-            if submission and not submission['resolved']:
-                # Can't vote on your own submission
-                if str(payload.user_id) == submission['discord_id']:
-                    return
-
-                # Count votes
-                upvotes = 0
-                downvotes = 0
-                for reaction in message.reactions:
-                    if str(reaction.emoji) == config.NOTEBOOK_UPVOTE_EMOJI:
-                        upvotes = reaction.count - 1  # Subtract bot's reaction
-                    elif str(reaction.emoji) == config.NOTEBOOK_DOWNVOTE_EMOJI:
-                        downvotes = reaction.count - 1  # Subtract bot's reaction
-
-                net_votes = upvotes - downvotes
-
-                # Check if enough votes to resolve
-                if net_votes >= config.NOTEBOOK_VOTES_REQUIRED:
-                    # Approved! Give points
-                    try:
-                        user = await self.bot.fetch_user(int(submission['discord_id']))
-                        database.add_credits(
-                            submission['discord_id'], user.name,
-                            config.CREDITS['documentation'],
-                            f"Notebook entry approved! ({upvotes} upvotes)"
-                        )
-                        database.resolve_notebook_submission(str(message.id), 'approved')
-
-                        await message.reply(
-                            f"✅ **Notebook Entry Approved!**\n"
-                            f"{user.mention} earned **+{config.CREDITS['documentation']}** credits!\n"
-                            f"Votes: {upvotes} 👍 / {downvotes} 👎"
-                        )
-                    except:
-                        pass
-
-                elif net_votes <= -1:  # Net negative
-                    # Rejected! Deduct points
-                    try:
-                        user = await self.bot.fetch_user(int(submission['discord_id']))
-                        database.add_credits(
-                            submission['discord_id'], user.name,
-                            config.NOTEBOOK_DOWNVOTE_PENALTY,
-                            f"Notebook entry rejected ({downvotes} downvotes)"
-                        )
-                        database.resolve_notebook_submission(str(message.id), 'rejected')
-
-                        await message.reply(
-                            f"❌ **Notebook Entry Rejected!**\n"
-                            f"{user.mention} lost **{config.NOTEBOOK_DOWNVOTE_PENALTY}** credits\n"
-                            f"Votes: {upvotes} 👍 / {downvotes} 👎"
-                        )
-                    except:
-                        pass
-
-            return
-
-        # Handle roasting (fire emoji)
-        if emoji != config.ROAST_EMOJI:
-            return
-
-        # Count fire reactions
         fire_count = 0
         for reaction in message.reactions:
             if str(reaction.emoji) == config.ROAST_EMOJI:
                 fire_count = reaction.count
                 break
 
-        # Check if threshold reached and not already roasted
         if fire_count >= config.ROAST_THRESHOLD:
-            if database.is_message_roasted(str(message.id)):
-                return
-
-            # Apply roast penalty
-            author_id = database.get_roasted_message_author(str(message.id))
-            if author_id and author_id != str(self.bot.user.id):
-                # Fetch user info
-                try:
-                    user = await self.bot.fetch_user(int(author_id))
-                    database.add_credits(
-                        author_id, user.name,
-                        config.CREDITS['roasted'],
-                        f"Got roasted! 🔥"
-                    )
-                    database.mark_message_roasted(str(message.id))
-
-                    # Reply to message
-                    await message.reply(
-                        f"🔥 {user.mention} got **ROASTED**! "
-                        f"({config.CREDITS['roasted']} social credit)"
-                    )
-                except:
-                    pass
+            try:
+                user = await self.bot.fetch_user(int(author_id))
+                database.add_credits(
+                    author_id, user.name,
+                    config.CREDITS['roasted'],
+                    f"Got roasted! 🔥"
+                )
+                database.mark_message_roasted(str(message.id))
+                await message.reply(
+                    f"🔥 {user.mention} got **ROASTED**! "
+                    f"({config.CREDITS['roasted']} social credit)"
+                )
+            except Exception as e:
+                print(f"⚠️ Roast handling failed: {e}")
 
     def _is_supreme_leader(self, member: discord.Member) -> bool:
         """Check if member has the Supreme Leader role."""

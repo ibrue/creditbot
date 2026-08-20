@@ -1,0 +1,10 @@
+.git
+.env
+*.db
+data/
+kiosk/
+__pycache__/
+*.pyc
+venv/
+.venv/
+*.log

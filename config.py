@@ -18,6 +18,20 @@ NOTEBOOKING_CHANNEL_ID = int(os.getenv("NOTEBOOKING_CHANNEL_ID", "0"))  # Auto d
 # Database
 DATABASE_PATH = os.getenv("DATABASE_PATH", "social_credit.db")
 
+# Kiosk photo posting
+# When the kiosk sends a check-in photo, the bot posts it to the check-in
+# channel. Set KIOSK_POST_PHOTOS=0 to disable posting.
+KIOSK_POST_PHOTOS = os.getenv("KIOSK_POST_PHOTOS", "1") == "1"
+KIOSK_UPLOADS_DIR = os.getenv("KIOSK_UPLOADS_DIR", "kiosk_uploads")
+
+# Local LLM captions (optional) — a vision model via Ollama writes a fun,
+# school-friendly caption for kiosk check-in photos. Install Ollama and
+# `ollama pull llava` (or moondream for slower PCs). Set OLLAMA_ENABLED=0
+# or leave Ollama uninstalled to skip captions (photos still post).
+OLLAMA_ENABLED = os.getenv("OLLAMA_ENABLED", "1") == "1"
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llava")
+
 # Credit Values
 CREDITS = {
     # Lab time
@@ -56,7 +70,8 @@ ROAST_THRESHOLD = 5  # Number of fire reactions for -1 credit
 NOTEBOOK_UPVOTE_EMOJI = "👍"
 NOTEBOOK_DOWNVOTE_EMOJI = "👎"
 NOTEBOOK_VOTES_REQUIRED = 3  # Net positive votes needed for points
-NOTEBOOK_DOWNVOTE_PENALTY = -2  # Points lost if net negative
+NOTEBOOK_DOWNVOTES_REQUIRED = 3  # Net negative votes needed for penalty
+NOTEBOOK_DOWNVOTE_PENALTY = -2  # Points lost when rejected
 
 # Magic smoke voting
 MAGIC_SMOKE_VOTES_REQUIRED = 3

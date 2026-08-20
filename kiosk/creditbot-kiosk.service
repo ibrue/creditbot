@@ -1,0 +1,21 @@
+# Example systemd user service to auto-start the kiosk on login.
+#
+# Install:
+#   mkdir -p ~/.config/systemd/user
+#   cp creditbot-kiosk.service ~/.config/systemd/user/
+#   # edit WorkingDirectory/ExecStart paths below to match your checkout
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now creditbot-kiosk
+#
+[Unit]
+Description=Creditbot facial-recognition check-in kiosk
+After=graphical-session.target
+
+[Service]
+WorkingDirectory=%h/creditbot/kiosk
+ExecStart=%h/creditbot/kiosk/.venv/bin/python kiosk.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
