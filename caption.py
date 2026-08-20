@@ -55,6 +55,10 @@ def generate_caption(photo_path: str) -> str | None:
             },
             timeout=90,
         )
+        if response.status_code == 404:
+            print(f"ℹ️ No caption: model '{config.OLLAMA_MODEL}' is not pulled — "
+                  f"run setup_ollama.bat (or: ollama pull {config.OLLAMA_MODEL})")
+            return None
         response.raise_for_status()
         text = response.json().get("response", "")
     except Exception as e:

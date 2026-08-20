@@ -53,23 +53,15 @@ ever crashes).
 ## Optional: fun AI captions for check-in photos
 
 When someone checks in at the kiosk, the bot posts their photo to the
-check-in channel. If you install [Ollama](https://ollama.com/download)
-on this PC and pull a vision model, a local LLM writes a playful,
-school-friendly caption for each photo (everything runs on this PC —
-no cloud):
+check-in channel. A local LLM (Ollama) can add a playful,
+school-friendly caption to each photo — everything runs on this PC, no
+cloud.
 
-```
-ollama pull llava
-```
-
-On a slower PC use the much smaller model and set it in `.env`:
-
-```
-ollama pull moondream
-```
-```
-OLLAMA_MODEL=moondream
-```
+Double-click **`setup_ollama.bat`**. It installs Ollama (via winget, or
+the official installer as a fallback), picks a vision model that fits
+this PC's RAM (`llava`, or the smaller `moondream` under 12 GB),
+downloads it, and sets `OLLAMA_MODEL` in `.env`. Then restart
+`start_server.bat`.
 
 No Ollama? No problem — photos post without captions. Turn photo posting
 off entirely with `KIOSK_POST_PHOTOS=0` in `.env`.
