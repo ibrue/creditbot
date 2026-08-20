@@ -71,14 +71,9 @@ def test_get_transactions_respects_limit(db):
     assert len(db.get_transactions("1", limit=3)) == 3
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: ORDER BY timestamp DESC has only second granularity, so "
-           "transactions logged in the same second fall back to rowid order "
-           "(oldest first). /history shows them backwards. "
-           "Fix: ORDER BY timestamp DESC, id DESC.",
-)
 def test_get_transactions_is_newest_first(db):
+    """Regression: same-second transactions used to come back oldest-first,
+    because ORDER BY timestamp alone left the tie to rowid order."""
     for i in range(5):
         db.add_credits("1", "alice", i + 1, f"reason {i}")
     txs = db.get_transactions("1")
@@ -387,18 +382,13 @@ def test_penalize_supreme_leader_sets_the_new_weeks_starting_score(db):
 
     user = db.get_user("1")
     assert user["weekly_credits"] == -15
-    assert user["total_credits"] == 50
+    assert user["total_credits"] == 35  # the handicap is a real cost
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: the handicap logs a -15 transaction but never changes "
-           "total_credits, so audit_user_credits reports 15 credits of drift "
-           "and fix_user_credits silently deducts 15 from the winner's "
-           "all-time total. Fix: apply the handicap to total_credits too, or "
-           "log it as a weekly-only adjustment excluded from the audit.",
-)
 def test_supreme_leader_handicap_does_not_create_audit_drift(db):
+    """Regression: the handicap logged a transaction without touching
+    total_credits, so /audit flagged the winner and its fix deducted the
+    penalty a second time."""
     db.add_credits("1", "alice", 50, "a good week")
     db.reset_weekly_credits()
     db.penalize_supreme_leader("1", -15)
@@ -407,14 +397,9 @@ def test_supreme_leader_handicap_does_not_create_audit_drift(db):
     assert db.audit_all_users() == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: after the Sunday reset, calculated_weekly still sums the "
-           "whole just-ended week (those transactions are dated inside the "
-           "current Mon-Sun window), so fix_user_credits restores the "
-           "pre-reset score and undoes the weekly reset for everyone.",
-)
 def test_audit_fix_does_not_undo_the_weekly_reset(db):
+    """Regression: the audit summed the whole calendar week, so a fix run
+    after Sunday's reset restored everyone's pre-reset weekly score."""
     db.add_credits("1", "alice", 40, "the week's work")
     db.reset_weekly_credits()
     db.fix_user_credits("1")
@@ -579,3 +564,86 @@ def test_database_parent_directory_is_created(tmp_path, monkeypatch):
     database.init_database()
 
     assert nested.exists()
+
+
+# ------------------------------------------------- weekly reset markers
+
+def test_reset_records_a_marker_anchored_to_the_last_transaction(db):
+    db.add_credits("1", "alice", 10, "x")
+    db.reset_weekly_credits()
+
+    marker = db.get_last_weekly_reset()
+    assert marker is not None
+    assert marker["reset_at"]
+
+    conn = db.get_connection()
+    last_id = conn.execute("SELECT MAX(id) FROM transactions").fetchone()[0]
+    conn.close()
+    assert marker["last_transaction_id"] == last_id
+
+
+def test_no_marker_before_the_first_reset(db):
+    assert db.get_last_weekly_reset() is None
+
+
+def test_new_weeks_earnings_count_against_the_new_marker(db):
+    db.add_credits("1", "alice", 40, "last week")
+    db.reset_weekly_credits()
+    db.add_credits("1", "alice", 6, "this week")
+
+    audit = db.audit_user_credits("1")
+    assert audit["calculated_weekly"] == 6
+    assert audit["weekly_diff"] == 0
+    assert audit["calculated_total"] == 46
+    assert audit["total_diff"] == 0
+
+
+def test_each_reset_supersedes_the_previous_marker(db):
+    db.add_credits("1", "alice", 10, "week one")
+    db.reset_weekly_credits()
+    db.add_credits("1", "alice", 20, "week two")
+    db.reset_weekly_credits()
+    db.add_credits("1", "alice", 5, "week three")
+
+    assert db.audit_user_credits("1")["calculated_weekly"] == 5
+
+
+def test_supreme_leader_handicap_counts_toward_the_new_week(db):
+    """The handicap is logged after the reset, so it lands in the new week."""
+    db.add_credits("1", "alice", 50, "a good week")
+    db.reset_weekly_credits()
+    db.penalize_supreme_leader("1", -15)
+
+    audit = db.audit_user_credits("1")
+    assert audit["calculated_weekly"] == -15
+    assert audit["weekly_diff"] == 0
+
+
+# ------------------------------------------ upgrading an older database
+
+def test_init_adds_the_reset_table_to_an_existing_database(db):
+    """A database written before this change gains weekly_resets on startup
+    without losing data."""
+    conn = db.get_connection()
+    conn.execute("DROP TABLE weekly_resets")
+    conn.commit()
+    conn.close()
+
+    db.add_credits("1", "alice", 10, "x")
+    db.init_database()
+
+    assert db.get_last_weekly_reset() is None
+    assert db.get_user("1")["total_credits"] == 10
+
+
+def test_audit_falls_back_to_the_calendar_week_without_a_marker(db):
+    """Until the first reset under the new code, the audit behaves as before."""
+    db.add_credits("1", "alice", 10, "x")
+    conn = db.get_connection()
+    conn.execute("DELETE FROM weekly_resets")
+    conn.commit()
+    conn.close()
+
+    audit = db.audit_user_credits("1")
+    assert audit["calculated_weekly"] == 10
+    assert audit["weekly_diff"] == 0
