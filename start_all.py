@@ -8,6 +8,7 @@ import threading
 import uvicorn
 
 import bot
+import updater
 
 
 def run_api():
@@ -15,6 +16,9 @@ def run_api():
 
 
 def main():
+    # Pull merged changes from GitHub automatically and restart
+    updater.start_background_updater("server")
+
     api_thread = threading.Thread(target=run_api, daemon=True)
     api_thread.start()
     print("Kiosk API starting on http://0.0.0.0:8765")

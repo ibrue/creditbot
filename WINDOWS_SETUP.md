@@ -74,6 +74,25 @@ OLLAMA_MODEL=moondream
 No Ollama? No problem — photos post without captions. Turn photo posting
 off entirely with `KIOSK_POST_PHOTOS=0` in `.env`.
 
+## Automatic updates from GitHub
+
+If you installed with `git clone` (recommended — install
+[Git for Windows](https://git-scm.com/download/win) if needed), the
+server and the kiosk **update themselves**: every 30 minutes they check
+the repo's `main` branch on GitHub, pull merged changes, reinstall
+dependencies if they changed, and restart on the new code (the kiosk
+waits until nobody is mid-check-in). So shipping a change to the lab PC
+is just: merge the pull request on GitHub.
+
+- Your `.env`, database, face models, and face logs are never touched by
+  updates.
+- If someone hand-edited code on the PC, the update safely refuses
+  instead of overwriting — the console log says so.
+- Turn it off with `AUTO_UPDATE=0`, follow a different branch with
+  `UPDATE_BRANCH=...`, or update manually anytime with `python updater.py`.
+- ZIP installs can't auto-update (no git history) — the console says so
+  at startup.
+
 ## Auto-start on boot
 
 Press `Win+R`, type `shell:startup`, Enter — then put shortcuts to

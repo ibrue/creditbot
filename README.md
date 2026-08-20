@@ -122,6 +122,10 @@ Every Sunday at 6 PM:
   recognizes enrolled members' faces via webcam and checks them in with
   the same credits and bonuses. Recognized captures are logged locally so
   `retune_faces.py` can fine-tune recognition per person over time.
+- **Automatic updates:** machines installed via `git clone` follow the
+  `main` branch — merge a PR on GitHub and the server and kiosk pull it
+  and restart themselves within ~30 minutes (`AUTO_UPDATE=0` to opt out,
+  `python updater.py` to update on demand).
 
 ## Cloud Deployment
 

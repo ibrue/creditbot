@@ -37,6 +37,10 @@ import face_log
 from api_client import ApiClient
 from face_engine import FaceEngine
 
+# The auto-updater lives at the repo root (one level up)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import updater
+
 API_URL = os.getenv("KIOSK_API_URL", "http://localhost:8765")
 API_KEY = os.getenv("KIOSK_API_KEY", "")
 CAMERA_INDEX = int(os.getenv("KIOSK_CAMERA", "0"))
@@ -119,6 +123,8 @@ class KioskApp:
         self.api_queue = queue.Queue()
         self.last_face_refresh = time.time()
         self.failed_reads = 0
+        self.update_ready = False
+        self._start_update_checker()
 
         self._build_ui()
         self._refresh_faces_async()
@@ -274,11 +280,35 @@ class KioskApp:
             self.last_face_refresh = time.time()
             self._refresh_faces_async()
 
+        # Apply a downloaded update only while idle — never mid-check-in.
+        # The start script's restart loop relaunches on the new code.
+        if self.update_ready and self.state == "idle":
+            print("🔄 Kiosk update applied — restarting on the new version.")
+            os._exit(updater.RESTART_EXIT_CODE)
+
         if self.state == "result" and time.time() > self.result_until:
             self.state = "idle"
             self.set_message("")
 
         self.root.after(30, self._tick)
+
+    def _start_update_checker(self):
+        """Pull merged changes from GitHub in the background; the restart
+        (to run the new code) waits until the kiosk is idle."""
+        if not updater.AUTO_UPDATE or not updater.is_available():
+            return
+
+        def loop():
+            while True:
+                time.sleep(updater.UPDATE_INTERVAL_MIN * 60)
+                result = updater.check_and_update()
+                if result["updated"]:
+                    print(f"🔄 Kiosk: {result['reason']} — will restart when idle.")
+                    self.update_ready = True
+                    return  # code on disk is new; wait for idle restart
+
+        threading.Thread(target=loop, daemon=True, name="kiosk-updater").start()
+        print(f"🔄 Auto-update on: following origin/{updater.UPDATE_BRANCH}")
 
     def _reopen_camera(self):
         try:
