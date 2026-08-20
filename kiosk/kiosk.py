@@ -1,4 +1,4 @@
-"""Lab check-in kiosk with facial recognition.
+"""Lab check-in kiosk with facial recognition (Windows or Linux).
 
 Big touch-friendly buttons: press CHECK IN or CHECK OUT, look at the
 camera, and the kiosk recognizes your (enrolled) face and checks you
@@ -17,6 +17,7 @@ Keys: F11 toggles fullscreen, Esc leaves fullscreen, Ctrl+Q quits.
 """
 import os
 import queue
+import sys
 import threading
 import time
 import tkinter as tk
@@ -44,6 +45,8 @@ MATCH_VOTES = 3          # consecutive-ish frame matches required
 ENROLL_SAMPLES = 5       # face samples captured during enrollment
 RESULT_SECONDS = 6       # how long the result screen shows
 
+FONT = "Segoe UI" if sys.platform == "win32" else "DejaVu Sans"
+
 BG = "#101418"
 FG = "#e8eaed"
 GREEN = "#2e7d32"
@@ -70,7 +73,11 @@ class KioskApp:
         self.engine = FaceEngine()
         self.known_faces = []
 
-        self.cap = cv2.VideoCapture(CAMERA_INDEX)
+        if sys.platform == "win32":
+            # DirectShow opens much faster than the default MSMF backend
+            self.cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_DSHOW)
+        else:
+            self.cap = cv2.VideoCapture(CAMERA_INDEX)
         if not self.cap.isOpened():
             raise RuntimeError(
                 f"Could not open camera {CAMERA_INDEX}. "
@@ -107,11 +114,11 @@ class KioskApp:
         panel.pack(side="right", fill="y", padx=(16, 0))
 
         tk.Label(
-            panel, text="🔬 Lab Kiosk", font=("DejaVu Sans", 26, "bold"),
+            panel, text="🔬 Lab Kiosk", font=(FONT, 26, "bold"),
             bg=BG, fg=FG,
         ).pack(pady=(0, 20))
 
-        btn_font = ("DejaVu Sans", 22, "bold")
+        btn_font = (FONT, 22, "bold")
         self.checkin_btn = tk.Button(
             panel, text="✅  CHECK IN", font=btn_font, bg=GREEN, fg="white",
             activebackground="#1b5e20", activeforeground="white",
@@ -129,11 +136,11 @@ class KioskApp:
         self.checkout_btn.pack(pady=8)
 
         self.cancel_btn = tk.Button(
-            panel, text="Cancel", font=("DejaVu Sans", 14), bg=GRAY, fg="white",
+            panel, text="Cancel", font=(FONT, 14), bg=GRAY, fg="white",
             bd=0, cursor="hand2", command=self.cancel_scan,
         )
 
-        small_font = ("DejaVu Sans", 13)
+        small_font = (FONT, 13)
         tk.Button(
             panel, text="📷 Enroll Face", font=small_font, bg=BLUE, fg="white",
             bd=0, cursor="hand2", command=self.open_enroll_dialog,
@@ -145,14 +152,14 @@ class KioskApp:
 
         self.status_var = tk.StringVar(value="Connecting...")
         tk.Label(
-            panel, textvariable=self.status_var, font=("DejaVu Sans", 12),
+            panel, textvariable=self.status_var, font=(FONT, 12),
             bg=BG, fg="#9aa0a6", wraplength=240, justify="center",
         ).pack(side="bottom", pady=8)
 
         self.message_var = tk.StringVar(value="")
         self.message_label = tk.Label(
             self.root, textvariable=self.message_var,
-            font=("DejaVu Sans", 20, "bold"), bg=BG, fg=FG,
+            font=(FONT, 20, "bold"), bg=BG, fg=FG,
             wraplength=900, justify="center",
         )
         self.message_label.pack(side="bottom", pady=(0, 14))
@@ -389,19 +396,19 @@ class EnrollDialog(tk.Toplevel):
         self.grab_set()
 
         tk.Label(
-            self, text="Who is enrolling?", font=("DejaVu Sans", 16, "bold"),
+            self, text="Who is enrolling?", font=(FONT, 16, "bold"),
             bg=BG, fg=FG,
         ).pack(pady=(14, 6))
 
         tk.Label(
             self, text="Pick yourself from the list (members the bot knows):",
-            font=("DejaVu Sans", 11), bg=BG, fg="#9aa0a6",
+            font=(FONT, 11), bg=BG, fg="#9aa0a6",
         ).pack()
 
         list_frame = tk.Frame(self, bg=BG)
         list_frame.pack(fill="both", expand=True, padx=14, pady=6)
         self.member_list = tk.Listbox(
-            list_frame, font=("DejaVu Sans", 12), bg="#1c2126", fg=FG,
+            list_frame, font=(FONT, 12), bg="#1c2126", fg=FG,
             selectbackground=BLUE, height=8,
         )
         self.member_list.pack(side="left", fill="both", expand=True)
@@ -412,18 +419,18 @@ class EnrollDialog(tk.Toplevel):
 
         tk.Label(
             self, text="…or enter manually (Discord ID + display name):",
-            font=("DejaVu Sans", 11), bg=BG, fg="#9aa0a6",
+            font=(FONT, 11), bg=BG, fg="#9aa0a6",
         ).pack(pady=(8, 2))
 
         form = tk.Frame(self, bg=BG)
         form.pack(padx=14, fill="x")
         tk.Label(form, text="Discord ID:", bg=BG, fg=FG,
-                 font=("DejaVu Sans", 11)).grid(row=0, column=0, sticky="w")
-        self.id_entry = tk.Entry(form, font=("DejaVu Sans", 12), width=24)
+                 font=(FONT, 11)).grid(row=0, column=0, sticky="w")
+        self.id_entry = tk.Entry(form, font=(FONT, 12), width=24)
         self.id_entry.grid(row=0, column=1, padx=6, pady=3, sticky="we")
         tk.Label(form, text="Name:", bg=BG, fg=FG,
-                 font=("DejaVu Sans", 11)).grid(row=1, column=0, sticky="w")
-        self.name_entry = tk.Entry(form, font=("DejaVu Sans", 12), width=24)
+                 font=(FONT, 11)).grid(row=1, column=0, sticky="w")
+        self.name_entry = tk.Entry(form, font=(FONT, 12), width=24)
         self.name_entry.grid(row=1, column=1, padx=6, pady=3, sticky="we")
         form.columnconfigure(1, weight=1)
 
@@ -432,11 +439,11 @@ class EnrollDialog(tk.Toplevel):
             text="Enrollment is opt-in — only enroll your own face.\n"
                  "(Discord ID: Settings → Advanced → Developer Mode,\n"
                  "then right-click your name → Copy User ID)",
-            font=("DejaVu Sans", 10), bg=BG, fg="#9aa0a6", justify="center",
+            font=(FONT, 10), bg=BG, fg="#9aa0a6", justify="center",
         ).pack(pady=6)
 
         tk.Button(
-            self, text="📷 Start Capture", font=("DejaVu Sans", 14, "bold"),
+            self, text="📷 Start Capture", font=(FONT, 14, "bold"),
             bg=BLUE, fg="white", bd=0, cursor="hand2", command=self._start,
         ).pack(pady=10, ipadx=12, ipady=6)
 
@@ -486,13 +493,23 @@ class EnrollDialog(tk.Toplevel):
 
 
 def main():
-    if not API_KEY:
-        print("⚠️  KIOSK_API_KEY is not set. Create kiosk/.env with:")
-        print("    KIOSK_API_URL=http://<your-nas-ip>:8765")
-        print("    KIOSK_API_KEY=<same key as on the NAS>")
-        raise SystemExit(1)
     root = tk.Tk()
-    KioskApp(root)
+    if not API_KEY:
+        root.withdraw()
+        messagebox.showerror(
+            "Kiosk not configured",
+            "KIOSK_API_KEY is not set.\n\n"
+            "Create a .env file in the kiosk folder with:\n"
+            "  KIOSK_API_URL=http://<your-nas-ip>:8765\n"
+            "  KIOSK_API_KEY=<same key as on the NAS>",
+        )
+        raise SystemExit(1)
+    try:
+        KioskApp(root)
+    except Exception as e:
+        root.withdraw()
+        messagebox.showerror("Kiosk failed to start", str(e))
+        raise SystemExit(1)
     root.mainloop()
 
 
