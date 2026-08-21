@@ -97,7 +97,7 @@ python bot.py
 | Activity | Credits |
 |----------|---------|
 | Magic smoke (3+ votes) | -10 |
-| Forgot to check out | -2 |
+| Forgot to check out | Session voided (0 earned) |
 | Got roasted (5+ 🔥) | -1 |
 
 ## Weekly Awards
@@ -112,16 +112,17 @@ Every Sunday at 6 PM:
 ## Self-Hosting + Facial-Recognition Kiosk
 
 - **One Windows 10/11 PC (easiest):** see [WINDOWS_SETUP.md](WINDOWS_SETUP.md) —
-  `setup_server.bat` + `start_server.bat` run the bot and the kiosk API
-  together, and the same PC can run the kiosk GUI.
+  double-click **`START.bat`** and it runs the bot, the kiosk API and the
+  check-in kiosk together, installing whatever is missing on the first run.
 - **UGREEN NAS (or any Docker host):** see [NAS_SETUP.md](NAS_SETUP.md) —
   `docker compose up -d --build` runs the bot plus the kiosk API on
   port 8765 sharing the same database.
 - **Check-in kiosk:** see [kiosk/README.md](kiosk/README.md) — a GUI for
   Windows 10/11 or Linux with big Check In / Check Out buttons that
   recognizes enrolled members' faces via webcam and checks them in with
-  the same credits and bonuses. Recognized captures are logged locally so
-  `retune_faces.py` can fine-tune recognition per person over time.
+  the same credits and bonuses. Recognized captures are logged locally and
+  the kiosk retunes each member's samples from them automatically, so
+  recognition improves the more the lab uses it.
 - **Automatic updates:** machines installed via `git clone` follow the
   `main` branch — merge a PR on GitHub and the server and kiosk pull it
   and restart themselves within ~30 minutes (`AUTO_UPDATE=0` to opt out,
@@ -160,6 +161,33 @@ robotics-social-credit/
 ├── requirements.txt
 └── README.md
 ```
+
+## Running the Tests
+
+On Windows, double-click **`run_tests.bat`** — it installs what it needs on
+first run. Anywhere else:
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+The suite runs entirely offline against a throwaway SQLite database — it
+never touches your real `social_credit.db`, and it stubs out Discord and
+Ollama, so no bot token or local model is needed.
+
+```
+tests/test_helpers.py        formatting, tiers, streak messages
+tests/test_database.py       credits, check-ins, streaks, votes, audits
+tests/test_checkin_logic.py  kiosk check-in bonuses (matches Discord rules)
+tests/test_api.py            kiosk HTTP API and its authentication
+tests/test_caption.py        local-LLM captions and the safety filter
+tests/test_kiosk_feed.py     posting kiosk photos to Discord, and retries
+tests/test_updater.py        auto-update, and its never-clobber guarantees
+```
+
+They also run automatically on every pull request, on Linux and Windows
+across Python 3.10-3.12 (`.github/workflows/tests.yml`).
 
 ## Customization
 

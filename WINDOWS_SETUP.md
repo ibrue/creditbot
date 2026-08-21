@@ -20,35 +20,45 @@ git clone https://github.com/ibrue/creditbot.git
 
 ## 3. Run it
 
-Double-click **`start_server.bat`** — that's it. On first run it installs
-everything itself (virtual environment, dependencies) and opens `.env` in
-Notepad. Fill in:
+Double-click **`START.bat`**. That is the only script you need — it runs
+the Discord bot, the kiosk API, and the check-in kiosk together.
+
+On the first run it installs everything itself (virtual environments,
+dependencies, face models) and opens `.env` in Notepad. Fill in:
 
 - `DISCORD_TOKEN` — your bot token
 - `CHECKIN_CHANNEL_ID` / `ANNOUNCEMENTS_CHANNEL_ID`
-- `KIOSK_API_KEY` — any long random string (the kiosk uses the same one)
+- `KIOSK_API_KEY` — any long random string
+
+Save and close Notepad, and everything starts. The kiosk's own settings
+are written for you using the same API key, so there is nothing to copy
+between files.
 
 **Already have a database?** Keep `social_credit.db` in the project
 folder — it's picked up automatically.
 
-One console window runs both the Discord bot and the kiosk API
-(port 8765). Leave it open; logs show check-ins as they happen, and if
-the server ever crashes it restarts itself after 5 seconds (close the
-window to actually stop it).
+Two windows open: the server (Discord bot + kiosk API on port 8765) and
+the kiosk. Both restart themselves if they crash, so leave them open;
+close them to stop for real.
 
-## 4. Set up the kiosk GUI (same PC)
+Running the server on a NAS instead, with only the kiosk on this PC? Then
+skip `START.bat` and use `kiosk\start_kiosk.bat` on its own, pointing
+`KIOSK_API_URL` at the NAS.
 
-Double-click **`kiosk\start_kiosk.bat`** — it also installs its own
-dependencies and downloads the face models on first run, then opens the
-kiosk `.env`; use:
+## Recognition improves itself
 
-```
-KIOSK_API_URL=http://localhost:8765
-KIOSK_API_KEY=<same key as step 3>
-```
+Every recognized check-in saves a face capture locally. As those pile up,
+the kiosk periodically rebuilds each member's stored samples from their
+most varied captures — different angles and lighting beat near-duplicates
+— so recognition gets better the more the lab uses it.
 
-Save, close Notepad, and the kiosk launches (it also auto-restarts if it
-ever crashes).
+This runs on its own, only while the kiosk is idle, and only for members
+who have actually gathered new captures. Nothing to schedule or run.
+
+To force it right now, press **✨ Improve Recognition** on the kiosk.
+Turn the automatic pass off with `KIOSK_AUTO_RETUNE=0` in `kiosk\.env`,
+or change how often it looks with `KIOSK_AUTO_RETUNE_INTERVAL_MIN`
+(default 360, i.e. every 6 hours).
 
 ## Optional: fun AI captions for check-in photos
 
@@ -57,14 +67,23 @@ check-in channel. A local LLM (Ollama) can add a playful,
 school-friendly caption to each photo — everything runs on this PC, no
 cloud.
 
-Double-click **`setup_ollama.bat`**. It installs Ollama (via winget, or
-the official installer as a fallback), picks a vision model that fits
-this PC's RAM (`llava`, or the smaller `moondream` under 12 GB),
-downloads it, and sets `OLLAMA_MODEL` in `.env`. Then restart
-`start_server.bat`.
+This one is opt-in because the model is a few GB. Double-click
+**`setup_ollama.bat`** once. It installs Ollama (via winget, or the
+official installer as a fallback), picks a vision model that fits this
+PC's RAM (`llava`, or the smaller `moondream` under 12 GB), downloads it,
+and sets `OLLAMA_MODEL` in `.env`. Then restart `START.bat`.
+
+`START.bat` tells you at startup whether captions are on or off.
 
 No Ollama? No problem — photos post without captions. Turn photo posting
 off entirely with `KIOSK_POST_PHOTOS=0` in `.env`.
+
+## Checking everything still works
+
+Double-click **`run_tests.bat`** to run the test suite. It needs no
+`.env`, bot token, or AI model — the tests use a throwaway database and
+stub out Discord and Ollama, so your real `social_credit.db` is never
+touched. Handy after an update, or before merging a change.
 
 ## Where your data lives (and moving it to Documents)
 
@@ -114,10 +133,9 @@ is just: merge the pull request on GitHub.
 
 ## Auto-start on boot
 
-Press `Win+R`, type `shell:startup`, Enter — then put shortcuts to
-**both** `start_server.bat` and `kiosk\start_kiosk.bat` in that folder.
-With Windows auto-login enabled, the PC boots straight into a working
-kiosk.
+Press `Win+R`, type `shell:startup`, Enter — then put a shortcut to
+**`START.bat`** in that folder. With Windows auto-login enabled, the PC
+boots straight into a working kiosk.
 
 ## Notes
 

@@ -12,7 +12,6 @@ class SocialCreditCog(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.magic_smoke_votes = {}  # {target_id: {voter_ids}}
         self.supreme_smoke = {
             'target_id': None,
             'target_name': None,

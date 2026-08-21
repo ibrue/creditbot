@@ -91,23 +91,42 @@ the face crop locally under `face_log/<discord_id>_<name>/`, capped at
 `KIOSK_FACE_LOG=0` or move the folder with `KIOSK_FACE_LOG_DIR` in
 `.env`.
 
-When someone gets missed or misrecognized, fine-tune from those real
-captures — it rebuilds each person's stored embeddings from their most
-recent captures, keeping the most *diverse* set (different angles,
-lighting, glasses on/off), which beats the 5 same-pose samples from
-enrollment day:
+### It fine-tunes itself
+
+The kiosk rebuilds each person's stored embeddings from those captures on
+its own, keeping the most *diverse* set (different angles, lighting,
+glasses on/off) — which beats the handful of same-pose samples from
+enrollment day. So recognition gets better the more the lab uses it, with
+nothing to run.
+
+It only fires while the kiosk is idle, never mid-check-in, and only for
+people who have actually gathered new captures since their last retune
+(a first pass after ~12 captures, then roughly every 25 new ones).
+
+| Setting (`.env`) | Default | What it does |
+|---|---|---|
+| `KIOSK_AUTO_RETUNE` | `1` | Set to `0` to turn the automatic pass off |
+| `KIOSK_AUTO_RETUNE_INTERVAL_MIN` | `360` | How often to look for people who are due |
+
+**In a hurry?** Press **✨ Improve Recognition** on the kiosk to retune
+everyone right now; it refreshes the faces itself when it finishes.
+
+If someone still isn't recognized well, have them use the kiosk normally
+for a few days so the log gathers more varied captures.
+
+<details>
+<summary>Running it by hand (troubleshooting)</summary>
 
 ```bash
-python retune_faces.py            # retune everyone with logged captures
+python retune_faces.py            # everyone who is due
+python retune_faces.py --all      # everyone, due or not
 python retune_faces.py --person <discord-id>   # just one person
 python retune_faces.py --dry-run  # preview without changing anything
 ```
 
-(On Windows run it from the kiosk folder with
-`.venv\Scripts\python retune_faces.py`.) Then press **🔄 Refresh Faces**
-on the kiosk. If someone still isn't recognized well, have them use the
-kiosk normally for a few days — the log accumulates more varied captures
-— and retune again.
+On Windows run it from the kiosk folder with
+`.venv\Scripts\python retune_faces.py`, then press **🔄 Refresh Faces**.
+</details>
 
 ## Removing someone's face data
 

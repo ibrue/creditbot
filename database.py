@@ -177,6 +177,18 @@ def init_database():
         )
     """)
 
+    # Weekly reset markers. The audit needs to know when weekly_credits was
+    # last zeroed: the reset runs Sunday evening, partway through the
+    # Mon-Sun window, so "this week's transactions" is not the same thing
+    # as "transactions since the reset".
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS weekly_resets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            reset_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_transaction_id INTEGER DEFAULT 0
+        )
+    """)
+
     # Migration: roasted_messages gained a created_at column so old rows
     # can be pruned (the table used to grow forever — one message tracked
     # per server message)
@@ -302,7 +314,7 @@ def get_transactions(discord_id: str, limit: int = 10) -> list:
     cursor.execute("""
         SELECT * FROM transactions
         WHERE discord_id = ?
-        ORDER BY timestamp DESC
+        ORDER BY timestamp DESC, id DESC
         LIMIT ?
     """, (discord_id, limit))
     transactions = [dict(row) for row in cursor.fetchall()]
@@ -468,35 +480,6 @@ def get_stale_checkins(hours: int = 12) -> list:
     checkins = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return checkins
-
-
-def force_checkout(checkin_id: int, penalty: int):
-    """Force checkout a stale checkin with penalty."""
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT * FROM checkins WHERE id = ?", (checkin_id,))
-    checkin = cursor.fetchone()
-
-    if checkin:
-        cursor.execute("""
-            UPDATE checkins SET checkout_time = ?, credits_earned = ?
-            WHERE id = ?
-        """, (datetime.now(), penalty, checkin_id))
-
-        cursor.execute("""
-            UPDATE users SET total_credits = total_credits + ?,
-                           weekly_credits = weekly_credits + ?
-            WHERE discord_id = ?
-        """, (penalty, penalty, checkin['discord_id']))
-
-        cursor.execute(
-            "INSERT INTO transactions (discord_id, amount, reason) VALUES (?, ?, ?)",
-            (checkin['discord_id'], penalty, "Forgot to check out (auto-checkout)")
-        )
-
-    conn.commit()
-    conn.close()
 
 
 def force_checkout_no_points(checkin_id: int):
@@ -685,24 +668,57 @@ def reset_weekly_credits():
     # Reset weekly credits
     cursor.execute("UPDATE users SET weekly_credits = 0")
 
+    # Mark the reset so audit_user_credits() knows which transactions belong
+    # to the new week. The marker is the last transaction id rather than a
+    # timestamp: timestamps have only second granularity, so a transaction
+    # written in the same second as the reset could not be placed on one
+    # side or the other. Ids are exact.
+    cursor.execute("""
+        INSERT INTO weekly_resets (reset_at, last_transaction_id)
+        SELECT CURRENT_TIMESTAMP, COALESCE(MAX(id), 0) FROM transactions
+    """)
+
     conn.commit()
     conn.close()
+
+
+def get_last_weekly_reset() -> Optional[dict]:
+    """The most recent weekly reset marker, or None if one has never run."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT reset_at, last_transaction_id FROM weekly_resets
+        ORDER BY id DESC LIMIT 1
+    """)
+    result = cursor.fetchone()
+    conn.close()
+    return dict(result) if result else None
 
 
 def penalize_supreme_leader(discord_id: str, penalty: int = -15):
     """Give the Supreme Leader a penalty to start the new week behind."""
     conn = get_connection()
     cursor = conn.cursor()
+    # Called immediately after reset_weekly_credits(), so weekly_credits is
+    # 0 here and setting it to the penalty starts them the new week behind.
+    # The penalty applies to the all-time total as well: the transaction
+    # below is what audit_user_credits() recalculates from, so skipping the
+    # total would show up forever as unexplained drift and /audit's fix
+    # would then deduct the penalty a second time.
     cursor.execute("""
-        UPDATE users SET weekly_credits = ?
+        UPDATE users
+        SET weekly_credits = ?,
+            total_credits = total_credits + ?
         WHERE discord_id = ?
-    """, (penalty, discord_id))
+    """, (penalty, penalty, discord_id))
 
-    # Also log the transaction
+    # Also log the transaction. No explicit timestamp — the column default
+    # (CURRENT_TIMESTAMP) keeps it on the same clock as every other
+    # transaction, and after the reset marker so it counts toward the new week.
     cursor.execute("""
-        INSERT INTO transactions (discord_id, amount, reason, timestamp)
-        VALUES (?, ?, ?, ?)
-    """, (discord_id, penalty, "Supreme Leader handicap - heavy is the crown", datetime.now()))
+        INSERT INTO transactions (discord_id, amount, reason)
+        VALUES (?, ?, ?)
+    """, (discord_id, penalty, "Supreme Leader handicap - heavy is the crown"))
 
     conn.commit()
     conn.close()
@@ -757,45 +773,73 @@ def get_magic_smoke_voters(target_id: str) -> list:
 def add_magic_smoke_vote(target_id: str, voter_id: str) -> int:
     """Add a magic smoke vote. Returns total votes for target, or -1 if already voted."""
     conn = get_connection()
-    cursor = conn.cursor()
-    cutoff = datetime.now() - timedelta(hours=24)
+    try:
+        cursor = conn.cursor()
+        cutoff = datetime.now() - timedelta(hours=24)
 
-    # Check if already voted (within 24 hours)
-    cursor.execute("""
-        SELECT 1 FROM magic_smoke_votes
-        WHERE target_discord_id = ? AND voter_discord_id = ? AND applied = 0
-        AND timestamp > ?
-    """, (target_id, voter_id, cutoff))
-    if cursor.fetchone():
+        # Check if already voted (within 24 hours)
+        cursor.execute("""
+            SELECT 1 FROM magic_smoke_votes
+            WHERE target_discord_id = ? AND voter_discord_id = ? AND applied = 0
+            AND timestamp > ?
+        """, (target_id, voter_id, cutoff))
+        if cursor.fetchone():
+            return -1  # Already voted
+
+        # A vote round that never reached the threshold leaves an unapplied
+        # row behind forever. It stopped counting after 24 hours, but it still
+        # occupies the UNIQUE(target, voter, applied) slot — so without this
+        # the insert below would fail and that voter could never vote against
+        # this person again.
+        cursor.execute("""
+            DELETE FROM magic_smoke_votes
+            WHERE target_discord_id = ? AND voter_discord_id = ? AND applied = 0
+        """, (target_id, voter_id))
+
+        cursor.execute("""
+            INSERT INTO magic_smoke_votes (target_discord_id, voter_discord_id)
+            VALUES (?, ?)
+        """, (target_id, voter_id))
+        conn.commit()
+
+        # Count only votes from last 24 hours
+        cursor.execute("""
+            SELECT COUNT(*) as votes FROM magic_smoke_votes
+            WHERE target_discord_id = ? AND applied = 0 AND timestamp > ?
+        """, (target_id, cutoff))
+        return cursor.fetchone()['votes']
+    finally:
+        # Always close: an exception escaping with the connection open would
+        # strand a write transaction and lock the database for every other
+        # part of the bot until the process restarted.
         conn.close()
-        return -1  # Already voted
-
-    cursor.execute("""
-        INSERT INTO magic_smoke_votes (target_discord_id, voter_discord_id)
-        VALUES (?, ?)
-    """, (target_id, voter_id))
-    conn.commit()
-
-    # Count only votes from last 24 hours
-    cursor.execute("""
-        SELECT COUNT(*) as votes FROM magic_smoke_votes
-        WHERE target_discord_id = ? AND applied = 0 AND timestamp > ?
-    """, (target_id, cutoff))
-    votes = cursor.fetchone()['votes']
-    conn.close()
-    return votes
 
 
 def apply_magic_smoke(target_id: str):
     """Apply magic smoke penalty and mark votes as applied."""
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        UPDATE magic_smoke_votes SET applied = 1
-        WHERE target_discord_id = ? AND applied = 0
-    """, (target_id,))
-    conn.commit()
-    conn.close()
+    try:
+        cursor = conn.cursor()
+        # If this person has been smoked before, the earlier round left
+        # (target, voter, applied=1) rows behind. Marking this round's votes
+        # would collide with them on UNIQUE(target, voter, applied), so drop
+        # the superseded ones first — otherwise nobody could ever be smoked
+        # a second time.
+        cursor.execute("""
+            DELETE FROM magic_smoke_votes
+            WHERE target_discord_id = ? AND applied = 1
+              AND voter_discord_id IN (
+                  SELECT voter_discord_id FROM magic_smoke_votes
+                  WHERE target_discord_id = ? AND applied = 0
+              )
+        """, (target_id, target_id))
+        cursor.execute("""
+            UPDATE magic_smoke_votes SET applied = 1
+            WHERE target_discord_id = ? AND applied = 0
+        """, (target_id,))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 # ============ Meme Credit Operations ============
@@ -1116,12 +1160,27 @@ def audit_user_credits(discord_id: str) -> dict:
     """, (discord_id,))
     calculated_total = cursor.fetchone()['total']
 
-    # Calculate weekly (transactions from this week's start)
+    # Calculate weekly credits. Counting from this week's Monday is wrong
+    # once the Sunday-evening reset has run: those transactions are still
+    # inside the Mon-Sun window but were already zeroed out, so a fix would
+    # restore the pre-reset score and undo the reset. Count from the reset
+    # marker instead, falling back to the calendar week if none exists yet.
     week_start = date.today() - timedelta(days=date.today().weekday())
     cursor.execute("""
-        SELECT COALESCE(SUM(amount), 0) as weekly FROM transactions
-        WHERE discord_id = ? AND DATE(timestamp) >= ?
-    """, (discord_id, week_start))
+        SELECT last_transaction_id FROM weekly_resets ORDER BY id DESC LIMIT 1
+    """)
+    reset = cursor.fetchone()
+
+    if reset is not None:
+        cursor.execute("""
+            SELECT COALESCE(SUM(amount), 0) as weekly FROM transactions
+            WHERE discord_id = ? AND id > ?
+        """, (discord_id, reset['last_transaction_id'] or 0))
+    else:
+        cursor.execute("""
+            SELECT COALESCE(SUM(amount), 0) as weekly FROM transactions
+            WHERE discord_id = ? AND DATE(timestamp) >= ?
+        """, (discord_id, week_start))
     calculated_weekly = cursor.fetchone()['weekly']
 
     conn.close()

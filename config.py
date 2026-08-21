@@ -54,7 +54,8 @@ CREDITS = {
 
     # Deductions
     "magic_smoke": -10,       # Voted by 3+ members
-    "forgot_checkout": -2,    # Auto checkout after 12 hours
+    # Forgetting to check out is not a penalty — the session simply
+    # earns nothing (see _auto_checkout in cogs/checkin.py).
     "roasted": -1,            # 5+ fire reactions
 }
 
