@@ -18,6 +18,12 @@ kiosk_uploads/
 # Python
 __pycache__/
 .pytest_cache/
+
+# Coverage output (pytest --cov)
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
 *.py[cod]
 *$py.class
 *.so
