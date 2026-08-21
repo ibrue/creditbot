@@ -163,6 +163,9 @@ robotics-social-credit/
 
 ## Running the Tests
 
+On Windows, double-click **`run_tests.bat`** — it installs what it needs on
+first run. Anywhere else:
+
 ```bash
 pip install -r requirements-dev.txt
 pytest

@@ -66,6 +66,13 @@ downloads it, and sets `OLLAMA_MODEL` in `.env`. Then restart
 No Ollama? No problem — photos post without captions. Turn photo posting
 off entirely with `KIOSK_POST_PHOTOS=0` in `.env`.
 
+## Checking everything still works
+
+Double-click **`run_tests.bat`** to run the test suite. It needs no
+`.env`, bot token, or AI model — the tests use a throwaway database and
+stub out Discord and Ollama, so your real `social_credit.db` is never
+touched. Handy after an update, or before merging a change.
+
 ## Where your data lives (and moving it to Documents)
 
 By default everything stays in the project folder: `social_credit.db`
