@@ -53,6 +53,14 @@ class ApiClient:
     def checkout(self, discord_id: str):
         return self._post("/checkout", {"discord_id": discord_id})
 
+    def delete_faces(self, discord_id: str):
+        """Remove every stored embedding for a person (used when retuning)."""
+        r = self.session.delete(
+            f"{self.base_url}/faces/{discord_id}", timeout=self.timeout
+        )
+        r.raise_for_status()
+        return r.json()
+
     def enroll_face(self, discord_id: str, name: str, embedding):
         return self._post("/faces", {
             "discord_id": discord_id,

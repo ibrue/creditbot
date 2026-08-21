@@ -14,6 +14,13 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# The kiosk modules live in their own folder and import each other by bare
+# name, the way kiosk.py runs them. Only the ones free of OpenCV are
+# imported by the suite.
+KIOSK = ROOT / "kiosk"
+if str(KIOSK) not in sys.path:
+    sys.path.insert(0, str(KIOSK))
+
 
 @pytest.fixture
 def db(tmp_path, monkeypatch):

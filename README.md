@@ -112,16 +112,17 @@ Every Sunday at 6 PM:
 ## Self-Hosting + Facial-Recognition Kiosk
 
 - **One Windows 10/11 PC (easiest):** see [WINDOWS_SETUP.md](WINDOWS_SETUP.md) —
-  `setup_server.bat` + `start_server.bat` run the bot and the kiosk API
-  together, and the same PC can run the kiosk GUI.
+  double-click **`START.bat`** and it runs the bot, the kiosk API and the
+  check-in kiosk together, installing whatever is missing on the first run.
 - **UGREEN NAS (or any Docker host):** see [NAS_SETUP.md](NAS_SETUP.md) —
   `docker compose up -d --build` runs the bot plus the kiosk API on
   port 8765 sharing the same database.
 - **Check-in kiosk:** see [kiosk/README.md](kiosk/README.md) — a GUI for
   Windows 10/11 or Linux with big Check In / Check Out buttons that
   recognizes enrolled members' faces via webcam and checks them in with
-  the same credits and bonuses. Recognized captures are logged locally so
-  `retune_faces.py` can fine-tune recognition per person over time.
+  the same credits and bonuses. Recognized captures are logged locally and
+  the kiosk retunes each member's samples from them automatically, so
+  recognition improves the more the lab uses it.
 - **Automatic updates:** machines installed via `git clone` follow the
   `main` branch — merge a PR on GitHub and the server and kiosk pull it
   and restart themselves within ~30 minutes (`AUTO_UPDATE=0` to opt out,

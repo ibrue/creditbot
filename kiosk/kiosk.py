@@ -12,6 +12,8 @@ Configuration (environment variables or a .env file in this folder):
   KIOSK_API_KEY   must match KIOSK_API_KEY on the NAS (required)
   KIOSK_CAMERA    camera index, default 0
   KIOSK_FULLSCREEN  set to 1 to start fullscreen
+  KIOSK_AUTO_RETUNE  1 (default) to keep improving recognition on its own
+  KIOSK_AUTO_RETUNE_INTERVAL_MIN  how often to check, default 360 (6 h)
 
 Keys: F11 toggles fullscreen, Esc leaves fullscreen, Ctrl+Q quits.
 """
@@ -34,6 +36,8 @@ except ImportError:
     pass
 
 import face_log
+import retune_faces
+import retune_state
 from api_client import ApiClient
 from face_engine import FaceEngine
 
@@ -47,6 +51,13 @@ CAMERA_INDEX = int(os.getenv("KIOSK_CAMERA", "0"))
 START_FULLSCREEN = os.getenv("KIOSK_FULLSCREEN", "0") == "1"
 # Send the check-in photo to the server so the bot posts it to Discord
 SEND_PHOTO = os.getenv("KIOSK_SEND_PHOTO", "1") == "1"
+
+# Recognition improves itself: as members accumulate check-in captures, the
+# kiosk periodically rebuilds their stored samples from the most varied
+# ones. Runs only while idle, so it never interrupts a check-in.
+AUTO_RETUNE = os.getenv("KIOSK_AUTO_RETUNE", "1") == "1"
+AUTO_RETUNE_INTERVAL_MIN = max(
+    30, int(os.getenv("KIOSK_AUTO_RETUNE_INTERVAL_MIN", "360")))
 
 SCAN_SECONDS = 12        # how long to look for a face after a button press
 MATCH_VOTES = 3          # frontal frame matches required to identify someone
@@ -124,9 +135,12 @@ class KioskApp:
         self.last_face_refresh = time.time()
         self.failed_reads = 0
         self.update_ready = False
+        self.retuning = False
         self._start_update_checker()
 
         self._build_ui()
+        # After the UI exists: the retune scheduler touches the button.
+        self._start_auto_retune()
         self._refresh_faces_async()
         self._tick()
 
@@ -178,6 +192,12 @@ class KioskApp:
             panel, text="🔄 Refresh Faces", font=small_font, bg=GRAY, fg="white",
             bd=0, cursor="hand2", command=self._refresh_faces_async,
         ).pack(pady=6, fill="x")
+        self.retune_btn = tk.Button(
+            panel, text="✨ Improve Recognition", font=small_font, bg=GRAY,
+            fg="white", bd=0, cursor="hand2",
+            command=self.improve_recognition,
+        )
+        self.retune_btn.pack(pady=6, fill="x")
 
         self.status_var = tk.StringVar(value="Connecting...")
         tk.Label(
@@ -240,6 +260,34 @@ class KioskApp:
         )
 
     # ---------- Background API calls ----------
+
+    def improve_recognition(self):
+        """Rebuild everyone's face samples from their best captures, now."""
+        if self.retuning:
+            self.set_message("Already improving recognition...", FG)
+            return
+        if self.state != "idle":
+            self.set_message("Finish the check-in first, then try again.", FG)
+            return
+        self._start_retune(only_due=False)
+
+    def _start_retune(self, only_due: bool):
+        """Run a retune in the background. Results arrive via the api queue."""
+        if self.retuning:
+            return
+        self.retuning = True
+        self.retune_btn.configure(state="disabled", text="✨ Improving...")
+        self.status_var.set("Improving recognition...")
+
+        def work():
+            # A separate FaceEngine: OpenCV's DNN objects are not safe to
+            # share across threads, and the main loop is using self.engine
+            # for live recognition.
+            engine = FaceEngine()
+            return retune_faces.retune(self.api, engine=engine,
+                                       only_due=only_due)
+
+        self._run_async(work, "retune")
 
     def _run_async(self, fn, tag):
         def worker():
@@ -309,6 +357,34 @@ class KioskApp:
 
         threading.Thread(target=loop, daemon=True, name="kiosk-updater").start()
         print(f"🔄 Auto-update on: following origin/{updater.UPDATE_BRANCH}")
+
+    def _start_auto_retune(self):
+        """Periodically improve recognition from accumulated captures.
+
+        Only fires while the kiosk is idle, and only for people who have
+        actually gathered new captures since their last retune — so it
+        costs nothing on a quiet day."""
+        if not AUTO_RETUNE:
+            return
+
+        def loop():
+            while True:
+                time.sleep(AUTO_RETUNE_INTERVAL_MIN * 60)
+                if self.state != "idle" or self.retuning:
+                    continue  # try again next round rather than interrupt
+                people = retune_state.due_people(
+                    face_log.list_people(),
+                    retune_state.load_state(face_log.LOG_DIR),
+                )
+                if not people:
+                    continue
+                print(f"✨ Auto-retuning {len(people)} member(s) from "
+                      f"their recent captures...")
+                self.root.after(0, lambda: self._start_retune(only_due=True))
+
+        threading.Thread(target=loop, daemon=True, name="kiosk-retune").start()
+        print(f"✨ Auto-improve on: checking every "
+              f"{AUTO_RETUNE_INTERVAL_MIN} min for members with new captures")
 
     def _reopen_camera(self):
         try:
@@ -513,7 +589,16 @@ class KioskApp:
             pass
 
     def _handle_api_result(self, tag, result, error):
+        if tag == "retune":
+            self.retuning = False
+            self.retune_btn.configure(state="normal", text="✨ Improve Recognition")
+
         if error is not None:
+            if tag == "retune":
+                self.status_var.set("⚠️ Could not improve recognition")
+                self._show_result(f"⚠️ Improving recognition failed: {error}",
+                                  "#ef5350")
+                return
             if tag == "faces":
                 self.status_var.set(f"⚠️ Can't reach API at {API_URL}")
             else:
@@ -553,6 +638,15 @@ class KioskApp:
                 if result.get("weekend_bonus"):
                     text += " (weekend bonus!)"
                 self._show_result(text, "#81c784")
+
+        elif tag == "retune":
+            summary = retune_state.describe(result)
+            if any(r["status"] == "retuned" for r in result):
+                # Pick up the rebuilt samples straight away
+                self._refresh_faces_async()
+                self._show_result(f"✨ {summary}", "#81c784")
+            else:
+                self.status_var.set(summary)
 
         elif tag == "enrolled":
             self.known_faces = result
