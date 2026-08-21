@@ -480,7 +480,8 @@ def test_multiple_encodings_per_person_are_kept(db):
 
 
 def test_kiosk_photo_queue_marks_posted(db):
-    db.add_kiosk_photo("1", "alice", "/tmp/a.jpg", bonuses=json.dumps(["+3 First arrival!"]))
+    db.add_kiosk_photo("1", "alice", "queued-photo.jpg",
+                       bonuses=json.dumps(["+3 First arrival!"]))
     pending = db.get_unposted_kiosk_photos()
     assert len(pending) == 1
 

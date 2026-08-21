@@ -181,10 +181,12 @@ tests/test_database.py       credits, check-ins, streaks, votes, audits
 tests/test_checkin_logic.py  kiosk check-in bonuses (matches Discord rules)
 tests/test_api.py            kiosk HTTP API and its authentication
 tests/test_caption.py        local-LLM captions and the safety filter
+tests/test_kiosk_feed.py     posting kiosk photos to Discord, and retries
+tests/test_updater.py        auto-update, and its never-clobber guarantees
 ```
 
-Three tests are marked `xfail` — they describe credit-accounting bugs that
-are still open, and will start failing (loudly) once those are fixed.
+They also run automatically on every pull request, on Linux and Windows
+across Python 3.10-3.12 (`.github/workflows/tests.yml`).
 
 ## Customization
 
