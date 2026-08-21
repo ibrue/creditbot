@@ -482,35 +482,6 @@ def get_stale_checkins(hours: int = 12) -> list:
     return checkins
 
 
-def force_checkout(checkin_id: int, penalty: int):
-    """Force checkout a stale checkin with penalty."""
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT * FROM checkins WHERE id = ?", (checkin_id,))
-    checkin = cursor.fetchone()
-
-    if checkin:
-        cursor.execute("""
-            UPDATE checkins SET checkout_time = ?, credits_earned = ?
-            WHERE id = ?
-        """, (datetime.now(), penalty, checkin_id))
-
-        cursor.execute("""
-            UPDATE users SET total_credits = total_credits + ?,
-                           weekly_credits = weekly_credits + ?
-            WHERE discord_id = ?
-        """, (penalty, penalty, checkin['discord_id']))
-
-        cursor.execute(
-            "INSERT INTO transactions (discord_id, amount, reason) VALUES (?, ?, ?)",
-            (checkin['discord_id'], penalty, "Forgot to check out (auto-checkout)")
-        )
-
-    conn.commit()
-    conn.close()
-
-
 def force_checkout_no_points(checkin_id: int):
     """Force checkout a stale checkin without giving any points (no penalty, no reward)."""
     conn = get_connection()
@@ -802,45 +773,73 @@ def get_magic_smoke_voters(target_id: str) -> list:
 def add_magic_smoke_vote(target_id: str, voter_id: str) -> int:
     """Add a magic smoke vote. Returns total votes for target, or -1 if already voted."""
     conn = get_connection()
-    cursor = conn.cursor()
-    cutoff = datetime.now() - timedelta(hours=24)
+    try:
+        cursor = conn.cursor()
+        cutoff = datetime.now() - timedelta(hours=24)
 
-    # Check if already voted (within 24 hours)
-    cursor.execute("""
-        SELECT 1 FROM magic_smoke_votes
-        WHERE target_discord_id = ? AND voter_discord_id = ? AND applied = 0
-        AND timestamp > ?
-    """, (target_id, voter_id, cutoff))
-    if cursor.fetchone():
+        # Check if already voted (within 24 hours)
+        cursor.execute("""
+            SELECT 1 FROM magic_smoke_votes
+            WHERE target_discord_id = ? AND voter_discord_id = ? AND applied = 0
+            AND timestamp > ?
+        """, (target_id, voter_id, cutoff))
+        if cursor.fetchone():
+            return -1  # Already voted
+
+        # A vote round that never reached the threshold leaves an unapplied
+        # row behind forever. It stopped counting after 24 hours, but it still
+        # occupies the UNIQUE(target, voter, applied) slot — so without this
+        # the insert below would fail and that voter could never vote against
+        # this person again.
+        cursor.execute("""
+            DELETE FROM magic_smoke_votes
+            WHERE target_discord_id = ? AND voter_discord_id = ? AND applied = 0
+        """, (target_id, voter_id))
+
+        cursor.execute("""
+            INSERT INTO magic_smoke_votes (target_discord_id, voter_discord_id)
+            VALUES (?, ?)
+        """, (target_id, voter_id))
+        conn.commit()
+
+        # Count only votes from last 24 hours
+        cursor.execute("""
+            SELECT COUNT(*) as votes FROM magic_smoke_votes
+            WHERE target_discord_id = ? AND applied = 0 AND timestamp > ?
+        """, (target_id, cutoff))
+        return cursor.fetchone()['votes']
+    finally:
+        # Always close: an exception escaping with the connection open would
+        # strand a write transaction and lock the database for every other
+        # part of the bot until the process restarted.
         conn.close()
-        return -1  # Already voted
-
-    cursor.execute("""
-        INSERT INTO magic_smoke_votes (target_discord_id, voter_discord_id)
-        VALUES (?, ?)
-    """, (target_id, voter_id))
-    conn.commit()
-
-    # Count only votes from last 24 hours
-    cursor.execute("""
-        SELECT COUNT(*) as votes FROM magic_smoke_votes
-        WHERE target_discord_id = ? AND applied = 0 AND timestamp > ?
-    """, (target_id, cutoff))
-    votes = cursor.fetchone()['votes']
-    conn.close()
-    return votes
 
 
 def apply_magic_smoke(target_id: str):
     """Apply magic smoke penalty and mark votes as applied."""
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        UPDATE magic_smoke_votes SET applied = 1
-        WHERE target_discord_id = ? AND applied = 0
-    """, (target_id,))
-    conn.commit()
-    conn.close()
+    try:
+        cursor = conn.cursor()
+        # If this person has been smoked before, the earlier round left
+        # (target, voter, applied=1) rows behind. Marking this round's votes
+        # would collide with them on UNIQUE(target, voter, applied), so drop
+        # the superseded ones first — otherwise nobody could ever be smoked
+        # a second time.
+        cursor.execute("""
+            DELETE FROM magic_smoke_votes
+            WHERE target_discord_id = ? AND applied = 1
+              AND voter_discord_id IN (
+                  SELECT voter_discord_id FROM magic_smoke_votes
+                  WHERE target_discord_id = ? AND applied = 0
+              )
+        """, (target_id, target_id))
+        cursor.execute("""
+            UPDATE magic_smoke_votes SET applied = 1
+            WHERE target_discord_id = ? AND applied = 0
+        """, (target_id,))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 # ============ Meme Credit Operations ============

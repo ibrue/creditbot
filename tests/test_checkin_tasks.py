@@ -157,9 +157,8 @@ def test_a_stale_session_is_closed(cog, db, backdate):
 
 
 def test_auto_checkout_awards_nothing(cog, db, backdate):
-    """Current behavior: forgetting to check out voids the session's credits
-    rather than applying the -2 penalty the README describes.
-    config.CREDITS['forgot_checkout'] is currently unused."""
+    """Forgetting to check out voids the session's credits. It is not a
+    penalty — nothing is deducted from what they already had."""
     db.start_checkin("1", "alice", "msg")
     backdate("1", (config.AUTO_CHECKOUT_HOURS + 1) * 60)
     user = FakeUser(1, "alice")

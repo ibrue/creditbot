@@ -97,7 +97,7 @@ python bot.py
 | Activity | Credits |
 |----------|---------|
 | Magic smoke (3+ votes) | -10 |
-| Forgot to check out | -2 |
+| Forgot to check out | Session voided (0 earned) |
 | Got roasted (5+ 🔥) | -1 |
 
 ## Weekly Awards

@@ -138,15 +138,6 @@ def test_stale_checkins_are_detected(db, backdate):
     assert [row["discord_id"] for row in stale] == ["1"]
 
 
-def test_force_checkout_applies_penalty(db, backdate):
-    checkin_id = db.start_checkin("1", "alice", "msg1")
-    backdate("1", 13 * 60)
-    db.force_checkout(checkin_id, config.CREDITS["forgot_checkout"])
-
-    assert db.get_active_checkin("1") is None
-    assert db.get_user("1")["total_credits"] == config.CREDITS["forgot_checkout"]
-
-
 def test_force_checkout_no_points_leaves_credits_alone(db):
     checkin_id = db.start_checkin("1", "alice", "msg1")
     db.force_checkout_no_points(checkin_id)
@@ -648,3 +639,105 @@ def test_audit_falls_back_to_the_calendar_week_without_a_marker(db):
     audit = db.audit_user_credits("1")
     assert audit["calculated_weekly"] == 10
     assert audit["weekly_diff"] == 0
+
+
+# ------------------------------------------- magic smoke regression tests
+
+def _age_smoke_votes(db, hours):
+    """Pretend every existing vote was cast `hours` ago."""
+    conn = db.get_connection()
+    conn.execute("UPDATE magic_smoke_votes SET timestamp = ?",
+                 (datetime.now() - timedelta(hours=hours),))
+    conn.commit()
+    conn.close()
+
+
+def test_a_stale_vote_does_not_block_voting_again(db):
+    """Regression: a round that never reached the threshold left an unapplied
+    row occupying UNIQUE(target, voter, applied), so after 24 hours the
+    voter's next vote hit an IntegrityError and they could never vote
+    against that person again."""
+    db.add_magic_smoke_vote("bob", "alice")
+    _age_smoke_votes(db, 25)
+
+    assert db.has_voted_magic_smoke("bob", "alice") is False
+    assert db.add_magic_smoke_vote("bob", "alice") == 1
+
+
+def test_a_stale_vote_is_replaced_not_double_counted(db):
+    db.add_magic_smoke_vote("bob", "alice")
+    _age_smoke_votes(db, 25)
+    db.add_magic_smoke_vote("bob", "alice")
+
+    assert db.get_magic_smoke_voters("bob") == ["alice"]
+
+
+def test_voting_twice_inside_the_window_is_still_refused(db):
+    db.add_magic_smoke_vote("bob", "alice")
+    assert db.add_magic_smoke_vote("bob", "alice") == -1
+
+
+def test_the_same_person_can_be_smoked_more_than_once(db):
+    """Regression: the second round's votes collided with the first round's
+    applied rows, so nobody could ever be smoked twice."""
+    for voter in ("alice", "dave", "erin"):
+        db.add_magic_smoke_vote("bob", voter)
+    db.apply_magic_smoke("bob")
+
+    votes = [db.add_magic_smoke_vote("bob", v) for v in ("alice", "dave", "erin")]
+    assert votes == [1, 2, 3]
+    db.apply_magic_smoke("bob")
+
+    assert db.get_magic_smoke_voters("bob") == []
+
+
+def test_a_third_smoke_round_also_works(db):
+    for _ in range(3):
+        for voter in ("alice", "dave", "erin"):
+            db.add_magic_smoke_vote("bob", voter)
+        db.apply_magic_smoke("bob")
+
+    assert db.get_magic_smoke_voters("bob") == []
+
+
+def test_a_partial_round_then_a_full_one(db):
+    """The realistic sequence: a vote that fizzles, then a real round later."""
+    db.add_magic_smoke_vote("bob", "alice")
+    _age_smoke_votes(db, 25)
+
+    votes = [db.add_magic_smoke_vote("bob", v) for v in ("alice", "dave", "erin")]
+    assert votes == [1, 2, 3]
+
+
+def test_the_database_stays_writable_after_a_revote(db):
+    """Regression: the failing insert escaped with the connection open,
+    stranding a write transaction and locking the database for the whole
+    bot — check-ins included — until the process restarted."""
+    db.add_magic_smoke_vote("bob", "alice")
+    _age_smoke_votes(db, 25)
+    db.add_magic_smoke_vote("bob", "alice")
+
+    db.start_checkin("9", "frank", "msg")
+    db.add_credits("9", "frank", 5, "thanks")
+    assert db.get_user("9")["total_credits"] == 5
+
+
+def test_the_database_stays_writable_after_a_second_smoke(db):
+    for voter in ("alice", "dave", "erin"):
+        db.add_magic_smoke_vote("bob", voter)
+    db.apply_magic_smoke("bob")
+    for voter in ("alice", "dave", "erin"):
+        db.add_magic_smoke_vote("bob", voter)
+    db.apply_magic_smoke("bob")
+
+    db.add_credits("9", "frank", 5, "thanks")
+    assert db.get_user("9")["total_credits"] == 5
+
+
+def test_votes_against_other_people_are_unaffected(db):
+    db.add_magic_smoke_vote("bob", "alice")
+    _age_smoke_votes(db, 25)
+    db.add_magic_smoke_vote("bob", "alice")
+
+    assert db.add_magic_smoke_vote("carol", "alice") == 1
+    assert db.get_magic_smoke_voters("carol") == ["alice"]
