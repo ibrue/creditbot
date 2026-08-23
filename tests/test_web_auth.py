@@ -6,6 +6,7 @@ limit the blast radius — unforgeable cookies, expiry, and a login limiter
 """
 import json
 import os
+import sys
 import time
 
 import pytest
@@ -150,12 +151,31 @@ def test_a_secret_is_generated_and_kept(tmp_path, monkeypatch):
     assert web_auth.load_secret(str(path)) == first
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Windows has no POSIX mode bits — os.chmod only toggles the "
+           "read-only flag there, so st_mode always reports 0o666. The "
+           "server this protects runs on Linux; on Windows the file is "
+           "covered by the user profile's ACLs instead.",
+)
 def test_the_stored_secret_is_not_world_readable(tmp_path, monkeypatch):
     monkeypatch.delenv("WEB_SECRET", raising=False)
     path = tmp_path / ".web_secret"
     web_auth.load_secret(str(path))
 
     assert (path.stat().st_mode & 0o077) == 0
+
+
+def test_the_secret_is_written_on_every_platform(tmp_path, monkeypatch):
+    """Whatever the permission model, the file itself must land and be read
+    back — that is what makes sessions survive a restart."""
+    monkeypatch.delenv("WEB_SECRET", raising=False)
+    path = tmp_path / ".web_secret"
+
+    secret = web_auth.load_secret(str(path))
+
+    assert path.exists()
+    assert path.read_text().strip().encode() == secret
 
 
 def test_two_labs_get_different_secrets(tmp_path, monkeypatch):
