@@ -79,7 +79,16 @@ Once the NAS is on the tailnet, install Tailscale on the kiosk machine too
 ```
 
 That MagicDNS name follows the NAS around — no more breakage when the DHCP
-lease changes or you move the kiosk to another network. Verify from the kiosk:
+lease changes or you move the kiosk to another network.
+
+This is the remote counterpart to UGOS's own **Control Panel → Network →
+LAN → Customize domain name**, which gives the NAS a `dxp2800-xxxx.local`
+name. That one is mDNS: it only resolves for devices on the same LAN
+segment, so it won't help the kiosk from another building or you from home.
+MagicDNS resolves anywhere on the tailnet. Both can coexist — keep using
+`.local:9443` for UGOS on the lab network.
+
+Verify from the kiosk:
 
 ```bash
 curl http://creditbot-nas:8765/health   # -> {"status":"ok"}
