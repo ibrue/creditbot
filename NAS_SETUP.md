@@ -85,4 +85,7 @@ The kiosk machine talks to `http://<nas-ip>:8765`. Give the NAS a static
 IP (or DHCP reservation) on your router so the address doesn't change.
 Keep port 8765 LAN-only — don't port-forward it on your router.
 
+To reach the NAS (and the API) from outside the lab without port-forwarding,
+put it on a Tailscale tailnet → [TAILSCALE_SETUP.md](TAILSCALE_SETUP.md).
+
 Next: set up the kiosk itself → [kiosk/README.md](kiosk/README.md)

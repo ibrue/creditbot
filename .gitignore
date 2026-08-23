@@ -1,6 +1,10 @@
 # Environment variables (contains secrets)
 .env
 kiosk/.env
+tailscale/.env
+
+# Tailscale node identity and keys (never commit)
+tailscale/state/
 
 # Database (user data)
 *.db
