@@ -1,12 +1,18 @@
-"""Kiosk API for the social credit system.
+"""Kiosk API + web client for the social credit system.
 
-A small HTTP API that runs alongside the Discord bot (same SQLite
-database) so a check-in kiosk — e.g. the facial-recognition GUI in
-kiosk/ — can check members in and out with the same credit rules.
+A small HTTP server that runs alongside the Discord bot (same SQLite
+database), serving two audiences on port 8765:
+
+- /...      the kiosk API — the facial-recognition GUI in kiosk/ checks
+            members in and out with the same credit rules. Authenticated
+            with the X-API-Key header.
+- /app      the browser client — members check themselves in from any
+            computer or phone. Authenticated with the shared lab password
+            and a signed session cookie (see webapp.py).
 
 Run:  uvicorn api:app --host 0.0.0.0 --port 8765
 
-Auth: every request (except /health) must send the header
+Auth: every kiosk request (except /health) must send the header
       X-API-Key: <KIOSK_API_KEY from the environment>
 """
 import base64
@@ -23,11 +29,16 @@ from pydantic import BaseModel, Field
 import checkin_logic
 import config
 import database
+import webapp
 
 API_KEY = os.getenv("KIOSK_API_KEY", "")
 DISCORD_API = "https://discord.com/api/v10"
 
 app = FastAPI(title="Social Credit Kiosk API", version="1.0.0")
+
+# The browser client lives under /app so it cannot collide with the
+# kiosk's endpoints, which are authenticated completely differently.
+app.include_router(webapp.router, prefix="/app", tags=["web"])
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
@@ -38,6 +49,12 @@ def startup():
     if not API_KEY:
         print("⚠️  KIOSK_API_KEY is not set — all kiosk requests will be rejected.")
         print("   Set KIOSK_API_KEY in your .env file (any long random string).")
+    if webapp.WEB_ENABLED:
+        if webapp.WEB_PASSWORD:
+            print("🌐 Web client at /app (sign in with the lab password)")
+        else:
+            print("⚠️  WEB_PASSWORD is not set — the web client at /app will "
+                  "reject every sign-in until it is.")
 
 
 def require_api_key(key: str = Security(api_key_header)):
