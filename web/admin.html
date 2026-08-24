@@ -5,82 +5,190 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <title>CreditBot Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #101418; --panel: #171d23; --line: #232b33;
-    --fg: #e8eaed; --dim: #9aa0a6;
-    --blue: #1565c0; --teal: #80cbc4; --amber: #ffb300;
-    --green: #2e7d32; --radius: 14px;
+    --bg: #07080c;
+    --panel: rgba(255, 255, 255, .035);
+    --panel-strong: rgba(255, 255, 255, .06);
+    --line: rgba(255, 255, 255, .08);
+    --line-strong: rgba(255, 255, 255, .14);
+    --fg: #f4f5f7;
+    --dim: #8b93a3;
+    --accent: #2dd4bf;
+    --green: #10b981;
+    --green-deep: #059669;
+    --radius: 20px;
+    --radius-sm: 14px;
+    --ease: cubic-bezier(.16, 1, .3, 1);
   }
   * { box-sizing: border-box; }
+  html { scrollbar-color: rgba(255,255,255,.15) transparent; }
   body {
     margin: 0; background: var(--bg); color: var(--fg);
-    font: 16px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif;
-    min-height: 100dvh; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+    font: 16px/1.6 "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100dvh;
+    padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+    overflow-x: hidden;
   }
-  .wrap { max-width: 720px; margin: 0 auto; padding: 20px 16px 48px; }
-  h1 { font-size: 1.7rem; margin: 0 0 4px; }
-  .sub { color: var(--dim); font-size: .95rem; margin: 0 0 24px; }
-  .card { background: var(--panel); border: 1px solid var(--line);
-          border-radius: var(--radius); padding: 18px; margin-bottom: 16px; }
-  .card h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em;
-             color: var(--dim); margin: 0 0 12px; font-weight: 600; }
+
+  /* ---- aurora backdrop ---- */
+  .aurora { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+  .aurora::before, .aurora::after {
+    content: ""; position: absolute; border-radius: 50%; filter: blur(90px);
+  }
+  .aurora::before {
+    width: 640px; height: 640px; top: -280px; left: -160px;
+    background: radial-gradient(circle, rgba(129,140,248,.18), transparent 65%);
+  }
+  .aurora::after {
+    width: 720px; height: 720px; bottom: -340px; right: -200px;
+    background: radial-gradient(circle, rgba(45,212,191,.14), transparent 65%);
+  }
+  .aurora .grid {
+    position: absolute; inset: 0; opacity: .5;
+    background-image:
+      linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: radial-gradient(ellipse 90% 60% at 50% 0%, #000 30%, transparent 75%);
+    -webkit-mask-image: radial-gradient(ellipse 90% 60% at 50% 0%, #000 30%, transparent 75%);
+  }
+
+  .wrap { max-width: 760px; margin: 0 auto; padding: 40px 20px 56px; }
+  .brand {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: .8rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--dim); margin-bottom: 22px;
+    padding: 7px 14px; border: 1px solid var(--line); border-radius: 999px;
+    background: var(--panel); backdrop-filter: blur(12px);
+  }
+  .brand .dot-live {
+    width: 7px; height: 7px; border-radius: 50%; background: #818cf8;
+    box-shadow: 0 0 10px #818cf8; animation: pulse 2.4s infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+  h1 {
+    font-size: clamp(2rem, 6vw, 2.5rem); font-weight: 800; letter-spacing: -.03em;
+    line-height: 1.12; margin: 0 0 10px;
+  }
+  h1 .grad {
+    background: linear-gradient(92deg, #818cf8, var(--accent));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .sub { color: var(--dim); font-size: 1rem; margin: 0 0 30px; max-width: 52ch; }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 24px; margin-bottom: 16px;
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    box-shadow: 0 20px 50px -24px rgba(0,0,0,.6);
+  }
+  .card h2 {
+    font-size: .72rem; text-transform: uppercase; letter-spacing: .14em;
+    color: var(--dim); margin: 0 0 16px; font-weight: 600;
+  }
+
   button {
     font: inherit; font-weight: 600; color: #fff; border: 0;
-    border-radius: var(--radius); padding: 12px 16px; cursor: pointer;
-    background: var(--blue); transition: filter .15s, opacity .15s;
+    border-radius: var(--radius-sm); padding: 13px 18px; cursor: pointer;
+    background: linear-gradient(135deg, #4f46e5, #818cf8);
+    transition: transform .25s var(--ease), box-shadow .25s var(--ease),
+                filter .2s, opacity .2s;
+    box-shadow: 0 10px 30px -12px rgba(129,140,248,.45);
   }
-  button:hover:not(:disabled) { filter: brightness(1.12); }
-  button:disabled { opacity: .5; cursor: not-allowed; }
+  button:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.08); }
+  button:active:not(:disabled) { transform: translateY(0) scale(.985); }
+  button:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
   button:focus-visible, input:focus-visible, select:focus-visible {
-    outline: 2px solid var(--teal); outline-offset: 2px; }
-  button.full { width: 100%; }
-  button.save { background: var(--green); }
-  .ghost { background: transparent; border: 1px solid var(--line); color: var(--dim); }
-  input, select {
-    font: inherit; width: 100%; padding: 12px; border-radius: var(--radius);
-    border: 1px solid var(--line); background: #0c1013; color: var(--fg);
+    outline: none; box-shadow: 0 0 0 3px rgba(129,140,248,.35);
   }
-  label { display: block; font-size: .85rem; color: var(--dim); margin: 14px 0 6px; }
+  button.full { width: 100%; }
+  button.save {
+    background: linear-gradient(135deg, var(--green-deep), var(--green));
+    box-shadow: 0 12px 34px -14px rgba(16,185,129,.5);
+  }
+  .ghost {
+    background: var(--panel); border: 1px solid var(--line); color: var(--dim);
+    box-shadow: none; backdrop-filter: blur(10px);
+  }
+  .ghost:hover:not(:disabled) { border-color: var(--line-strong); color: var(--fg); filter: none; }
+
+  input, select {
+    font: inherit; width: 100%; padding: 13px 15px; border-radius: var(--radius-sm);
+    border: 1px solid var(--line); background: rgba(0,0,0,.35); color: var(--fg);
+    transition: border-color .2s, box-shadow .25s var(--ease);
+  }
+  input::placeholder { color: rgba(139,147,163,.6); }
+  input:hover, select:hover { border-color: var(--line-strong); }
+  select option { background: #12141a; }
+  label {
+    display: block; font-size: .82rem; font-weight: 500; color: var(--dim);
+    margin: 16px 0 8px;
+  }
   label:first-of-type { margin-top: 0; }
-  .msg { border-radius: var(--radius); padding: 12px 14px; margin-bottom: 14px;
-         font-weight: 600; display: none; }
+
+  .msg {
+    border-radius: var(--radius-sm); padding: 13px 17px; margin-bottom: 14px;
+    font-weight: 500; font-size: .95rem; display: none;
+    backdrop-filter: blur(10px); animation: rise .45s var(--ease);
+  }
   .msg.show { display: block; }
-  .msg.ok { background: rgba(46,125,50,.18); color: #a5d6a7; border: 1px solid rgba(46,125,50,.4); }
-  .msg.warn { background: rgba(255,179,0,.14); color: #ffcc80; border: 1px solid rgba(255,179,0,.35); }
-  .msg.err { background: rgba(198,40,40,.16); color: #ef9a9a; border: 1px solid rgba(198,40,40,.4); }
-  .hint { color: var(--dim); font-size: .85rem; margin: 6px 0 0; }
+  .msg.ok   { background: rgba(16,185,129,.12); color: #6ee7b7; border: 1px solid rgba(16,185,129,.3); }
+  .msg.warn { background: rgba(251,191,36,.1);  color: #fcd34d; border: 1px solid rgba(251,191,36,.28); }
+  .msg.err  { background: rgba(239,68,68,.12);  color: #fca5a5; border: 1px solid rgba(239,68,68,.3); }
+  .hint { color: var(--dim); font-size: .84rem; margin: 8px 0 0; line-height: 1.55; }
   .hidden { display: none !important; }
   .row2 { display: grid; gap: 10px; grid-template-columns: 1fr auto; align-items: end; }
-  .status-line { display: flex; gap: 8px; align-items: baseline; margin-bottom: 12px; }
-  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--dim);
-         display: inline-block; flex: none; align-self: center; }
-  .dot.on { background: #66bb6a; } .dot.off { background: #ef5350; }
+  .status-line { display: flex; gap: 10px; align-items: center; margin-bottom: 16px;
+                 padding: 12px 16px; border-radius: var(--radius-sm);
+                 background: rgba(0,0,0,.25); border: 1px solid var(--line);
+                 font-size: .92rem; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--dim);
+         display: inline-block; flex: none; }
+  .dot.on { background: #34d399; box-shadow: 0 0 10px rgba(52,211,153,.7); }
+  .dot.off { background: #f87171; box-shadow: 0 0 10px rgba(248,113,113,.5); }
+
   #term {
-    background: #06090c; border: 1px solid var(--line); border-radius: var(--radius);
-    padding: 12px 14px; margin: 0; height: 320px; overflow-y: auto;
-    font: 12.5px/1.55 ui-monospace, "Cascadia Mono", Consolas, monospace;
-    color: #9ccc9c; white-space: pre-wrap; word-break: break-word;
+    background: rgba(0, 0, 0, .55); border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    padding: 14px 16px; margin: 0; height: 320px; overflow-y: auto;
+    font: 12.5px/1.6 ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
+    color: #86efac; white-space: pre-wrap; word-break: break-word;
   }
-  #term .t { color: #546e7a; }
-  .term-bar { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
-  .term-bar button { padding: 8px 14px; font-size: .85rem; }
-  a.quiet { color: var(--dim); font-size: .85rem; text-decoration: none; }
-  a.quiet:hover { color: var(--fg); text-decoration: underline; }
+  #term .t { color: #4b5563; }
+  .term-bar { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+  .term-bar button { padding: 8px 15px; font-size: .84rem; }
+  a.quiet { color: var(--dim); font-size: .85rem; text-decoration: none; transition: color .2s; }
+  a.quiet:hover { color: var(--fg); }
+
+  @keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+  section { animation: rise .55s var(--ease); }
+  .card { animation: rise .55s var(--ease) backwards; }
+  section .card:nth-of-type(2) { animation-delay: .06s; }
+  @media (prefers-reduced-motion: reduce) {
+    section, .card, .msg { animation: none; }
+    button, input, select { transition: none; }
+  }
 </style>
 </head>
 <body>
+<div class="aurora" aria-hidden="true"><div class="grid"></div></div>
 <div class="wrap">
 
   <!-- ---------------- Admin login ---------------- -->
   <section id="login-view">
-    <h1>⚙️ CreditBot Admin</h1>
+    <span class="brand"><span class="dot-live"></span>CreditBot · Admin</span>
+    <h1>Mission <span class="grad">control</span></h1>
     <p class="sub">Discord setup and the live server terminal.</p>
     <div id="login-msg" class="msg err"></div>
     <form id="login-form" class="card">
       <label for="password">Admin password</label>
       <input id="password" type="password" required autocomplete="current-password" autofocus>
-      <button class="full" type="submit" style="margin-top:14px">Sign in</button>
+      <button class="full" type="submit" style="margin-top:16px">Sign in →</button>
       <p class="hint">Uses WEB_ADMIN_PASSWORD, or the lab password if no
         separate admin password is set.</p>
     </form>
@@ -89,7 +197,8 @@
 
   <!-- ---------------- Main ---------------- -->
   <section id="main-view" class="hidden">
-    <h1>⚙️ CreditBot Admin</h1>
+    <span class="brand"><span class="dot-live"></span>CreditBot · Admin</span>
+    <h1>Mission <span class="grad">control</span></h1>
     <p class="sub">Changes save to the server; the bot container needs one
       restart to pick them up.</p>
 
@@ -122,7 +231,7 @@
       <label for="ch-notebooking">Notebooking channel (optional)</label>
       <select id="ch-notebooking" class="ch"></select>
 
-      <button id="btn-save" class="full save" style="margin-top:18px">Save Discord settings</button>
+      <button id="btn-save" class="full save" style="margin-top:20px">Save Discord settings</button>
     </div>
 
     <div class="card">
