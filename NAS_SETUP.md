@@ -97,6 +97,9 @@ The kiosk machine talks to `http://<nas-ip>:8765`. Give the NAS a static
 IP (or DHCP reservation) on your router so the address doesn't change.
 Keep port 8765 LAN-only — don't port-forward it on your router.
 
+To reach the NAS (and the API) from outside the lab without port-forwarding,
+put it on a Tailscale tailnet → [TAILSCALE_SETUP.md](TAILSCALE_SETUP.md).
+
 Next: set up the kiosk itself → [kiosk/README.md](kiosk/README.md)
 
 
@@ -135,7 +138,7 @@ wrong passwords are rate-limited to 8 attempts per 15 minutes per client.
 lab's credit system on the public internet behind one shared password,
 where it will be found by scanners within hours.
 
-1. Install Tailscale on the NAS (UGOS App Center, or the Docker image).
+1. Install Tailscale on the NAS → [TAILSCALE_SETUP.md](TAILSCALE_SETUP.md).
 2. Install it on the phones and laptops that should reach the site.
 3. Open `http://<nas-tailscale-name>:8765/app` from anywhere.
 
