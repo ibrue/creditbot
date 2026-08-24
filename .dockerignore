@@ -3,6 +3,10 @@
 *.db
 data/
 kiosk/
+# ...except the two files the server's face login needs in the image:
+# the recognition engine, and the model downloader the Dockerfile runs.
+!kiosk/face_engine.py
+!kiosk/download_models.py
 __pycache__/
 *.pyc
 venv/
