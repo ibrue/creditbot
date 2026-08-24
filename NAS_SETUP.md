@@ -138,7 +138,7 @@ wrong passwords are rate-limited to 8 attempts per 15 minutes per client.
 lab's credit system on the public internet behind one shared password,
 where it will be found by scanners within hours.
 
-1. Install Tailscale on the NAS (UGOS App Center, or the Docker image).
+1. Install Tailscale on the NAS → [TAILSCALE_SETUP.md](TAILSCALE_SETUP.md).
 2. Install it on the phones and laptops that should reach the site.
 3. Open `http://<nas-tailscale-name>:8765/app` from anywhere.
 

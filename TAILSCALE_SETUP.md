@@ -1,13 +1,15 @@
 # Tailscale on the UGREEN NAS
 
 Puts the NAS on your [Tailscale](https://tailscale.com) tailnet, so you can
-reach it — SSH, UGOS, and the creditbot API on `:8765` — from anywhere,
-without port-forwarding anything on the lab router.
+reach it — SSH, UGOS, the kiosk API, and the web check-in client on `:8765` —
+from anywhere, without port-forwarding anything on the lab router.
 
 Worth doing because the alternative is worse: `NAS_SETUP.md` tells you to keep
-port 8765 LAN-only, which is correct, but it also means the kiosk has to live
-on the same network as the NAS and you can't check on the bot from home. A
-tailnet fixes both without opening a hole in the firewall.
+port 8765 LAN-only, which is correct, but it also means the kiosk has to sit on
+the same network as the NAS and nobody can check in from their phone unless
+they're on the lab wifi. A tailnet fixes both without opening a hole in the
+firewall — which matters most for the web client at `/app`, since it's guarded
+by a single shared password and has no business facing the public internet.
 
 Tailscale runs as its own container in **host networking** mode, so the whole
 NAS joins the tailnet — not just the container. Nothing about the bot changes.
@@ -93,6 +95,27 @@ Verify from the kiosk:
 ```bash
 curl http://creditbot-nas:8765/health   # -> {"status":"ok"}
 ```
+
+### The web client comes along for free
+
+The browser check-in page is served on the same port, so once the NAS is on
+the tailnet it's reachable at `http://creditbot-nas:8765/app` from any phone
+or laptop you've added — no extra config, no second port.
+
+Optionally, give it real HTTPS. `tailscale serve` terminates TLS using a
+certificate Tailscale provisions for your tailnet domain:
+
+```bash
+sudo tailscale serve --bg 8765
+```
+
+That publishes it at `https://creditbot-nas.<your-tailnet>.ts.net`, still
+tailnet-only and still not exposed publicly. `--bg` makes it persist across
+reboots. If you do this, set `WEB_HTTPS=1` in `.env` so the app marks its
+session cookies Secure.
+
+Note this is Serve, not Funnel — Funnel is the one that publishes to the open
+internet, and you don't want it for a page behind a single shared password.
 
 If MagicDNS isn't enabled on your tailnet, use the `100.x.y.z` address the
 script printed instead.
