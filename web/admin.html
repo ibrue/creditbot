@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>CreditBot Control Room</title>
+<title>CreditBot Admin</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -191,22 +191,21 @@
 <div class="wrap">
 
   <div class="masthead glass">
-    <span class="sys">CREDITBOT<em>*</em> CONTROL ROOM</span>
+    <span class="sys">CREDITBOT<em>*</em> ADMIN</span>
     <a href=".">back to check-in</a>
   </div>
 
   <!-- ---------------- Admin login ---------------- -->
   <section id="login-view">
-    <h1>Who goes <span class="hl">there?</span></h1>
-    <p class="sub">Admins only beyond this point. The Discord hookup and the
-      all-seeing terminal await.</p>
+    <h1>Admin <span class="hl">sign-in.</span></h1>
+    <p class="sub">Discord setup and the live server terminal.</p>
     <div id="login-msg" class="msg err"></div>
     <form id="login-form" class="block">
-      <div class="block-head">Clearance check <small>no clipboard required</small></div>
+      <div class="block-head">Access <small>admin password</small></div>
       <div class="block-body">
         <label for="password">Admin password</label>
         <input id="password" type="password" required autocomplete="current-password" autofocus>
-        <button class="full" type="submit" style="margin-top:16px">Open the control room</button>
+        <button class="full" type="submit" style="margin-top:16px">Sign in</button>
         <p class="hint">Uses WEB_ADMIN_PASSWORD, or the lab password if no
           separate admin password is set.</p>
       </div>
@@ -215,7 +214,7 @@
 
   <!-- ---------------- Main ---------------- -->
   <section id="main-view" class="hidden">
-    <h1>Control <span class="hl">room.</span></h1>
+    <h1>Admin <span class="hl">console.</span></h1>
     <p class="sub">Changes save to the server on the spot; the Discord bot
       picks them up after one container restart.</p>
 
@@ -254,7 +253,7 @@
     </div>
 
     <div class="block">
-      <div class="block-head">The server speaks <small>live feed</small></div>
+      <div class="block-head">Server terminal <small>live</small></div>
       <div class="block-body">
         <pre id="term"></pre>
         <div class="term-bar">
@@ -265,7 +264,7 @@
     </div>
 
     <div class="footnote">
-      <span>creditbot · the lab is always watching</span>
+      <span>creditbot · self-hosted</span>
       <a class="quiet" href=".">back to check-in</a>
     </div>
   </section>

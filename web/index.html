@@ -262,34 +262,34 @@
 
   <!-- ---------------- Login ---------------- -->
   <section id="login-view">
-    <h1>Papers, <span class="hl">please.</span></h1>
-    <p class="sub">State the lab password to proceed.</p>
+    <h1>Lab <span class="hl">check-in.</span></h1>
+    <p class="sub">Enter the lab password to continue.</p>
     <div id="login-msg" class="msg err"></div>
     <form id="login-form" class="block" autocomplete="on">
-      <div class="block-head">Access control <small>one password, zero bureaucracy</small></div>
+      <div class="block-head">Access <small>shared password</small></div>
       <div class="block-body">
         <label for="password">Lab password</label>
         <input id="password" name="password" type="password" required
                autocomplete="current-password" autofocus>
-        <button id="login-btn" type="submit" style="margin-top:16px">Enter the lab</button>
+        <button id="login-btn" type="submit" style="margin-top:16px">Sign in</button>
       </div>
     </form>
   </section>
 
   <!-- ---------------- Pick who you are ---------------- -->
   <section id="pick-view" class="hidden">
-    <h1>Face the <span class="hl">machine.</span></h1>
-    <p class="sub">Let the camera recognize you — or point at your name like it's 1999.</p>
+    <h1>Who are <span class="hl">you?</span></h1>
+    <p class="sub">Look at the camera, or pick your name below.</p>
     <div id="pick-msg" class="msg err"></div>
     <div class="block hidden" id="face-card">
-      <div class="block-head">Recognition booth <small>it judges kindly</small></div>
+      <div class="block-head">Face login <small>same models as the kiosk</small></div>
       <div class="block-body">
         <video id="face-video" autoplay playsinline muted></video>
-        <p id="face-status">Summoning the camera…</p>
+        <p id="face-status">Starting camera…</p>
       </div>
     </div>
     <div class="block">
-      <div class="block-head">The register <small>analog fallback</small></div>
+      <div class="block-head">Pick your name</div>
       <div class="block-body">
         <label for="filter">Search</label>
         <input id="filter" type="search" placeholder="Start typing a name…" autocomplete="off">
@@ -303,7 +303,7 @@
   <section id="app-view" class="hidden">
     <div class="who">
       <div>
-        <h1 id="hello">Citizen</h1>
+        <h1 id="hello">Hi</h1>
         <p class="sub" id="tier"></p>
       </div>
       <span class="pill glass" id="state-pill"></span>
@@ -312,7 +312,7 @@
     <div id="app-msg" class="msg" style="margin-top:16px"></div>
 
     <div class="block" style="margin-top:16px">
-      <div class="block-head">Social credit balance <small>the ledger remembers</small></div>
+      <div class="block-head">Credits <small>your account</small></div>
       <div class="stats">
         <div class="stat"><b id="s-total">0</b><span>All-time</span></div>
         <div class="stat"><b id="s-week">0</b><span>This week</span></div>
@@ -326,12 +326,12 @@
     </div>
 
     <div class="block">
-      <div class="block-head">In the lab right now <small>allegedly working</small></div>
+      <div class="block-head">In the lab now</div>
       <div class="block-body"><ul id="whos-in"></ul></div>
     </div>
 
     <div class="block">
-      <div class="block-head">Hall of glory <small>updated ruthlessly</small></div>
+      <div class="block-head">Leaderboard <small>the Supreme Leader is crowned weekly</small></div>
       <div class="block-body">
         <div class="tabs" role="tablist">
           <button role="tab" id="tab-weekly" aria-selected="true">This week</button>
@@ -342,7 +342,7 @@
     </div>
 
     <div class="block">
-      <div class="block-head">Your permanent record <small>nothing is forgotten</small></div>
+      <div class="block-head">Recent credits <small>magic smoke counts against you</small></div>
       <div class="block-body"><ul id="history"></ul></div>
     </div>
 
@@ -351,8 +351,8 @@
       <button class="ghost" id="signout">Sign out</button>
     </div>
     <div class="footnote">
-      <span>creditbot · the lab is always watching</span>
-      <a class="quiet" href="admin">control room</a>
+      <span>creditbot · self-hosted</span>
+      <a class="quiet" href="admin">Admin</a>
     </div>
   </section>
 </div>
@@ -369,7 +369,7 @@ if (STATION) {
   document.title = "Lab Station";
   $("sys-name").innerHTML = "CREDITBOT<em>*</em> STATION TERMINAL";
   document.querySelector("#login-view .sub").textContent =
-    "This terminal signs in as the shared lab account. No questions asked.";
+    "This computer signs in as the shared lab account.";
 }
 
 // Masthead clock — a punch clock should show the time.
@@ -427,7 +427,7 @@ function renderMembers() {
   const list = $("member-list");
   list.innerHTML = "";
   if (!shown.length) {
-    list.innerHTML = '<li class="empty">No members match. Ghosts cannot check in.</li>';
+    list.innerHTML = '<li class="empty">No members match.</li>';
     return;
   }
   for (const m of shown.slice(0, 40)) {
@@ -473,8 +473,8 @@ async function startFace() {
   $("face-video").classList.add("hidden");  // no dead black box until video flows
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     faceSay(window.isSecureContext
-      ? "This browser has no camera support — the register below still works."
-      : "Camera needs HTTPS (or localhost) — the register below still works.");
+      ? "This browser has no camera support — pick your name below."
+      : "Camera needs HTTPS (or localhost) — pick your name below.");
     return;
   }
   try {
@@ -483,12 +483,12 @@ async function startFace() {
       audio: false,
     });
   } catch {
-    faceSay("Camera blocked or missing — the register below still works.");
+    faceSay("Camera blocked or missing — pick your name below.");
     return;
   }
   $("face-video").classList.remove("hidden");
   $("face-video").srcObject = faceStream;
-  faceSay("Hold still, citizen…");
+  faceSay("Looking for your face…");
   faceTimer = setInterval(faceTick, 1500);
 }
 
@@ -514,7 +514,7 @@ async function faceTick() {
     canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
     const image_b64 = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
     const result = await api("/face-login", { method: "POST", body: JSON.stringify({ image_b64 }) });
-    faceSay(`Recognized: ${result.name}. Welcome back.`, true);
+    faceSay(`Recognized: ${result.name}`, true);
     stopFace();
     await refresh();
     return;
@@ -537,7 +537,7 @@ function renderBoard() {
   const list = $("board");
   list.innerHTML = "";
   if (!rows.length) {
-    list.innerHTML = '<li class="empty">No glory yet this week.</li>';
+    list.innerHTML = '<li class="empty">Nothing yet this week.</li>';
     return;
   }
   rows.forEach((row, i) => {
@@ -568,14 +568,14 @@ async function act(path, btn) {
     const result = await api(path, { method: "POST" });
     if (result.status === "checked_in") {
       const bonuses = (result.bonuses || []).join(" · ");
-      say($("app-msg"), "Checked in. The Algorithm smiles upon you." + (bonuses ? "  " + bonuses : ""), "ok");
+      say($("app-msg"), "Checked in." + (bonuses ? "  " + bonuses : ""), "ok");
     } else if (result.status === "already_checked_in") {
-      say($("app-msg"), `Easy there — you're already on the clock (${result.minutes_so_far} min).`, "warn");
+      say($("app-msg"), `Already checked in (${result.minutes_so_far} min ago).`, "warn");
     } else if (result.status === "checked_out") {
       const weekend = result.weekend_bonus ? " (weekend bonus)" : "";
-      say($("app-msg"), `Checked out: ${result.duration} in the lab, +${result.credits_earned} credits${weekend}. Spend them wisely.`, "ok");
+      say($("app-msg"), `Checked out: ${result.duration} in the lab, +${result.credits_earned} credits${weekend}.`, "ok");
     } else if (result.status === "not_checked_in") {
-      say($("app-msg"), "You weren't even checked in. Bold.", "warn");
+      say($("app-msg"), "You weren't checked in.", "warn");
     }
     await refresh({ keepMessage: true });
   } catch (err) {
@@ -621,12 +621,12 @@ async function refresh({ keepMessage = false } = {}) {
   $("switch").classList.toggle("hidden", STATION);
   const p = me.person;
   meId = p.discord_id;
-  $("hello").textContent = `Citizen ${p.name}`;
+  $("hello").textContent = p.name;
   $("tier").textContent = `Rank: ${p.tier}`;
   $("s-total").textContent = p.total_credits;
   $("s-week").textContent = p.weekly_credits;
   $("s-streak").textContent = p.streak;
-  $("state-pill").textContent = p.checked_in ? `On the clock · ${p.checked_in_for}` : "Off the clock";
+  $("state-pill").textContent = p.checked_in ? `In the lab · ${p.checked_in_for}` : "Not checked in";
   $("state-pill").classList.toggle("in", p.checked_in);
   $("btn-checkin").disabled = p.checked_in;
   $("btn-checkout").disabled = !p.checked_in;
@@ -642,7 +642,7 @@ async function refresh({ keepMessage = false } = {}) {
   const inList = $("whos-in");
   inList.innerHTML = "";
   if (!inLab.checked_in.length) {
-    inList.innerHTML = '<li class="empty">Nobody’s here. Suspiciously quiet.</li>';
+    inList.innerHTML = '<li class="empty">Nobody is in the lab right now.</li>';
   } else {
     for (const person of inLab.checked_in) {
       const li = document.createElement("li");
@@ -663,7 +663,7 @@ async function refresh({ keepMessage = false } = {}) {
   const histList = $("history");
   histList.innerHTML = "";
   if (!hist.transactions.length) {
-    histList.innerHTML = '<li class="empty">Blank slate. The ledger awaits.</li>';
+    histList.innerHTML = '<li class="empty">No credits yet — check in to get started.</li>';
   } else {
     for (const t of hist.transactions) {
       const li = document.createElement("li");
