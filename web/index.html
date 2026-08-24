@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Lab Check-In</title>
+<style>
+  :root {
+    --bg: #101418; --panel: #171d23; --line: #232b33;
+    --fg: #e8eaed; --dim: #9aa0a6;
+    --green: #2e7d32; --green-lit: #388e3c;
+    --red: #c62828; --red-lit: #d32f2f;
+    --blue: #1565c0; --teal: #80cbc4; --amber: #ffb300;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif;
+    min-height: 100dvh; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  }
+  .wrap { max-width: 620px; margin: 0 auto; padding: 20px 16px 48px; }
+  h1 { font-size: 1.7rem; margin: 0 0 4px; }
+  .sub { color: var(--dim); font-size: .95rem; margin: 0 0 24px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 18px; margin-bottom: 16px;
+  }
+  .card h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em;
+             color: var(--dim); margin: 0 0 12px; font-weight: 600; }
+  button {
+    font: inherit; font-weight: 600; color: #fff; border: 0;
+    border-radius: var(--radius); padding: 14px 18px; cursor: pointer;
+    background: var(--blue); width: 100%; transition: filter .15s, opacity .15s;
+  }
+  button:hover:not(:disabled) { filter: brightness(1.12); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+  .big { font-size: 1.35rem; padding: 26px 18px; }
+  .checkin { background: var(--green); }
+  .checkout { background: var(--red); }
+  .ghost { background: transparent; border: 1px solid var(--line); color: var(--dim); }
+  .row { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 460px) { .row { grid-template-columns: 1fr; } }
+  input {
+    font: inherit; width: 100%; padding: 14px; border-radius: var(--radius);
+    border: 1px solid var(--line); background: #0c1013; color: var(--fg);
+  }
+  label { display: block; font-size: .85rem; color: var(--dim); margin-bottom: 6px; }
+  .msg { border-radius: var(--radius); padding: 14px 16px; margin-bottom: 16px;
+         font-weight: 600; display: none; }
+  .msg.show { display: block; }
+  .msg.ok { background: rgba(46,125,50,.18); color: #a5d6a7; border: 1px solid rgba(46,125,50,.4); }
+  .msg.warn { background: rgba(255,179,0,.14); color: #ffcc80; border: 1px solid rgba(255,179,0,.35); }
+  .msg.err { background: rgba(198,40,40,.16); color: #ef9a9a; border: 1px solid rgba(198,40,40,.4); }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center; }
+  .stat b { display: block; font-size: 1.5rem; }
+  .stat span { font-size: .75rem; color: var(--dim); text-transform: uppercase; letter-spacing: .05em; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { display: flex; justify-content: space-between; gap: 12px;
+       padding: 9px 0; border-bottom: 1px solid var(--line); }
+  li:last-child { border-bottom: 0; }
+  li .meta { color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .rank { color: var(--dim); width: 1.6em; display: inline-block; }
+  .you { color: var(--teal); }
+  .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+  .tabs button { background: transparent; border: 1px solid var(--line);
+                 color: var(--dim); padding: 8px 14px; font-size: .9rem; }
+  .tabs button[aria-selected="true"] { background: var(--line); color: var(--fg); }
+  .who { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .who b { font-size: 1.15rem; }
+  .hidden { display: none !important; }
+  .empty { color: var(--dim); font-style: italic; }
+  .pill { font-size: .75rem; padding: 3px 9px; border-radius: 999px;
+          background: rgba(128,203,196,.15); color: var(--teal); white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ---------------- Login ---------------- -->
+  <section id="login-view">
+    <h1>🔬 Lab Check-In</h1>
+    <p class="sub">Enter the lab password to continue.</p>
+    <div id="login-msg" class="msg err"></div>
+    <form id="login-form" class="card" autocomplete="on">
+      <label for="password">Lab password</label>
+      <input id="password" name="password" type="password" required
+             autocomplete="current-password" autofocus>
+      <button id="login-btn" type="submit" style="margin-top:14px">Sign in</button>
+    </form>
+  </section>
+
+  <!-- ---------------- Pick who you are ---------------- -->
+  <section id="pick-view" class="hidden">
+    <h1>Who are you?</h1>
+    <p class="sub">Pick your name so check-ins land on your account.</p>
+    <div id="pick-msg" class="msg err"></div>
+    <div class="card">
+      <label for="filter">Search</label>
+      <input id="filter" type="search" placeholder="Start typing a name…" autocomplete="off">
+      <ul id="member-list" style="margin-top:12px"></ul>
+    </div>
+    <button class="ghost" id="signout-pick">Sign out</button>
+  </section>
+
+  <!-- ---------------- Main ---------------- -->
+  <section id="app-view" class="hidden">
+    <div class="who">
+      <div>
+        <h1 id="hello">Hi</h1>
+        <p class="sub" id="tier"></p>
+      </div>
+      <span class="pill" id="state-pill"></span>
+    </div>
+
+    <div id="app-msg" class="msg"></div>
+
+    <div class="card">
+      <div class="stats">
+        <div class="stat"><b id="s-total">0</b><span>All-time</span></div>
+        <div class="stat"><b id="s-week">0</b><span>This week</span></div>
+        <div class="stat"><b id="s-streak">0</b><span>Streak</span></div>
+      </div>
+    </div>
+
+    <div class="row" style="margin-bottom:16px">
+      <button class="big checkin" id="btn-checkin">✅ Check In</button>
+      <button class="big checkout" id="btn-checkout">👋 Check Out</button>
+    </div>
+
+    <div class="card">
+      <h2>In the lab now</h2>
+      <ul id="whos-in"></ul>
+    </div>
+
+    <div class="card">
+      <h2>Leaderboard</h2>
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tab-weekly" aria-selected="true">This week</button>
+        <button role="tab" id="tab-alltime" aria-selected="false">All time</button>
+      </div>
+      <ul id="board"></ul>
+    </div>
+
+    <div class="card">
+      <h2>Your recent credits</h2>
+      <ul id="history"></ul>
+    </div>
+
+    <div class="row">
+      <button class="ghost" id="switch">Not you?</button>
+      <button class="ghost" id="signout">Sign out</button>
+    </div>
+  </section>
+</div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const views = { login: $("login-view"), pick: $("pick-view"), app: $("app-view") };
+
+function show(name) {
+  for (const [key, el] of Object.entries(views)) el.classList.toggle("hidden", key !== name);
+}
+function say(el, text, kind = "ok") {
+  el.textContent = text;
+  el.className = "msg " + kind + (text ? " show" : "");
+}
+async function api(path, options = {}) {
+  const res = await fetch("/app/api" + path, {
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  let body = {};
+  try { body = await res.json(); } catch { /* empty body */ }
+  if (!res.ok) throw new Error(body.detail || `Something went wrong (${res.status})`);
+  return body;
+}
+
+// ---------- login ----------
+$("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = $("login-btn");
+  btn.disabled = true;
+  say($("login-msg"), "");
+  try {
+    await api("/login", { method: "POST", body: JSON.stringify({ password: $("password").value }) });
+    $("password").value = "";
+    await refresh();
+  } catch (err) {
+    say($("login-msg"), err.message, "err");
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ---------- picking a person ----------
+let members = [];
+function renderMembers() {
+  const needle = $("filter").value.trim().toLowerCase();
+  const shown = members.filter((m) => m.username.toLowerCase().includes(needle));
+  const list = $("member-list");
+  list.innerHTML = "";
+  if (!shown.length) {
+    list.innerHTML = '<li class="empty">No members match.</li>';
+    return;
+  }
+  for (const m of shown.slice(0, 40)) {
+    const li = document.createElement("li");
+    const btn = document.createElement("button");
+    btn.className = "ghost";
+    btn.style.textAlign = "left";
+    btn.textContent = m.username;
+    btn.addEventListener("click", () => choose(m.discord_id));
+    li.append(btn);
+    list.append(li);
+  }
+}
+async function choose(discord_id) {
+  try {
+    await api("/select", { method: "POST", body: JSON.stringify({ discord_id }) });
+    await refresh();
+  } catch (err) {
+    say($("pick-msg"), err.message, "err");
+  }
+}
+$("filter").addEventListener("input", renderMembers);
+
+// ---------- main ----------
+let board = { weekly: [], alltime: [] };
+let currentTab = "weekly";
+let meId = null;
+
+function renderBoard() {
+  const rows = board[currentTab] || [];
+  const list = $("board");
+  list.innerHTML = "";
+  if (!rows.length) {
+    list.innerHTML = '<li class="empty">Nothing yet this week.</li>';
+    return;
+  }
+  rows.forEach((row, i) => {
+    const li = document.createElement("li");
+    const who = document.createElement("span");
+    who.innerHTML = `<span class="rank">${i + 1}.</span>`;
+    who.append(row.username);
+    if (String(row.discord_id) === String(meId)) who.classList.add("you");
+    const meta = document.createElement("span");
+    meta.className = "meta";
+    meta.textContent = (currentTab === "weekly" ? row.weekly_credits : row.total_credits) + " cr";
+    li.append(who, meta);
+    list.append(li);
+  });
+}
+$("tab-weekly").addEventListener("click", () => switchTab("weekly"));
+$("tab-alltime").addEventListener("click", () => switchTab("alltime"));
+function switchTab(tab) {
+  currentTab = tab;
+  $("tab-weekly").setAttribute("aria-selected", tab === "weekly");
+  $("tab-alltime").setAttribute("aria-selected", tab === "alltime");
+  renderBoard();
+}
+
+async function act(path, btn) {
+  btn.disabled = true;
+  try {
+    const result = await api(path, { method: "POST" });
+    if (result.status === "checked_in") {
+      const bonuses = (result.bonuses || []).join(" · ");
+      say($("app-msg"), "✅ Checked in!" + (bonuses ? "  " + bonuses : ""), "ok");
+    } else if (result.status === "already_checked_in") {
+      say($("app-msg"), `ℹ️ You're already checked in (${result.minutes_so_far} min ago).`, "warn");
+    } else if (result.status === "checked_out") {
+      const weekend = result.weekend_bonus ? " (weekend bonus!)" : "";
+      say($("app-msg"), `👋 ${result.duration} in the lab · +${result.credits_earned} credits${weekend}`, "ok");
+    } else if (result.status === "not_checked_in") {
+      say($("app-msg"), "ℹ️ You weren't checked in.", "warn");
+    }
+    await refresh({ keepMessage: true });
+  } catch (err) {
+    say($("app-msg"), err.message, "err");
+  } finally {
+    btn.disabled = false;
+  }
+}
+$("btn-checkin").addEventListener("click", (e) => act("/checkin", e.currentTarget));
+$("btn-checkout").addEventListener("click", (e) => act("/checkout", e.currentTarget));
+
+$("switch").addEventListener("click", async () => {
+  members = await api("/members").then((r) => r.members).catch(() => []);
+  renderMembers();
+  show("pick");
+});
+async function signOut() {
+  await api("/logout", { method: "POST" }).catch(() => {});
+  meId = null;
+  show("login");
+}
+$("signout").addEventListener("click", signOut);
+$("signout-pick").addEventListener("click", signOut);
+
+// ---------- state ----------
+async function refresh({ keepMessage = false } = {}) {
+  let me;
+  try {
+    me = await api("/me");
+  } catch {
+    show("login");
+    return;
+  }
+
+  if (!me.person) {
+    members = await api("/members").then((r) => r.members).catch(() => []);
+    renderMembers();
+    show("pick");
+    return;
+  }
+
+  const p = me.person;
+  meId = p.discord_id;
+  $("hello").textContent = `Hi, ${p.name}`;
+  $("tier").textContent = `${p.tier_emoji} ${p.tier}`;
+  $("s-total").textContent = p.total_credits;
+  $("s-week").textContent = p.weekly_credits;
+  $("s-streak").textContent = p.streak;
+  $("state-pill").textContent = p.checked_in ? `In the lab · ${p.checked_in_for}` : "Not checked in";
+  $("btn-checkin").disabled = p.checked_in;
+  $("btn-checkout").disabled = !p.checked_in;
+  if (!keepMessage) say($("app-msg"), "");
+  show("app");
+
+  const [inLab, boards, hist] = await Promise.all([
+    api("/whos-in").catch(() => ({ checked_in: [] })),
+    api("/leaderboard").catch(() => ({ weekly: [], alltime: [] })),
+    api("/history").catch(() => ({ transactions: [] })),
+  ]);
+
+  const inList = $("whos-in");
+  inList.innerHTML = "";
+  if (!inLab.checked_in.length) {
+    inList.innerHTML = '<li class="empty">Nobody is in the lab right now.</li>';
+  } else {
+    for (const person of inLab.checked_in) {
+      const li = document.createElement("li");
+      const who = document.createElement("span");
+      who.textContent = person.name;
+      if (String(person.discord_id) === String(meId)) who.classList.add("you");
+      const meta = document.createElement("span");
+      meta.className = "meta";
+      meta.textContent = person.duration;
+      li.append(who, meta);
+      inList.append(li);
+    }
+  }
+
+  board = boards;
+  renderBoard();
+
+  const histList = $("history");
+  histList.innerHTML = "";
+  if (!hist.transactions.length) {
+    histList.innerHTML = '<li class="empty">No credits yet — check in to get started.</li>';
+  } else {
+    for (const t of hist.transactions) {
+      const li = document.createElement("li");
+      const reason = document.createElement("span");
+      reason.textContent = t.reason;
+      const meta = document.createElement("span");
+      meta.className = "meta";
+      meta.textContent = (t.amount > 0 ? "+" : "") + t.amount;
+      meta.style.color = t.amount >= 0 ? "#a5d6a7" : "#ef9a9a";
+      li.append(reason, meta);
+      histList.append(li);
+    }
+  }
+}
+
+// Keep durations honest without hammering the server.
+setInterval(() => { if (!views.app.classList.contains("hidden")) refresh({ keepMessage: true }); }, 60000);
+refresh();
+</script>
+</body>
+</html>

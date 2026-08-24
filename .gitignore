@@ -2,6 +2,10 @@
 .env
 kiosk/.env
 
+# Web session signing key (generated per server, never shared)
+.web_secret
+data/.web_secret
+
 # Database (user data)
 *.db
 data/
