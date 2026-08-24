@@ -3,247 +3,220 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="color-scheme" content="dark">
 <title>CreditBot Admin</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #07080c;
-    --panel: rgba(255, 255, 255, .035);
-    --panel-strong: rgba(255, 255, 255, .06);
-    --line: rgba(255, 255, 255, .08);
-    --line-strong: rgba(255, 255, 255, .14);
-    --fg: #f4f5f7;
-    --dim: #8b93a3;
-    --accent: #2dd4bf;
-    --green: #10b981;
-    --green-deep: #059669;
-    --radius: 20px;
-    --radius-sm: 14px;
-    --ease: cubic-bezier(.16, 1, .3, 1);
+    --paper: #ffffff;
+    --ink: #161616;
+    --dim: #5f5f5f;
+    --rule: #161616;
+    --rule-soft: #d8d5cf;
+    --accent: #c84512;
+    --ok: #1a6b3c;
+    --warn: #8a5a00;
+    --err: #b3261e;
+    --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+    --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   }
   * { box-sizing: border-box; }
-  html { scrollbar-color: rgba(255,255,255,.15) transparent; }
+  html { background: var(--paper); }
   body {
-    margin: 0; background: var(--bg); color: var(--fg);
-    font: 16px/1.6 "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
-    -webkit-font-smoothing: antialiased;
+    margin: 0; background: var(--paper); color: var(--ink);
+    font: 15.5px/1.55 var(--sans);
     min-height: 100dvh;
     padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
-    overflow-x: hidden;
   }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 0 18px 56px; }
 
-  /* ---- aurora backdrop ---- */
-  .aurora { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
-  .aurora::before, .aurora::after {
-    content: ""; position: absolute; border-radius: 50%; filter: blur(90px);
+  .masthead {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+    border-top: 6px solid var(--ink);
+    border-bottom: 1px solid var(--ink);
+    padding: 10px 0 9px;
+    margin-bottom: 26px;
+    font-family: var(--mono);
   }
-  .aurora::before {
-    width: 640px; height: 640px; top: -280px; left: -160px;
-    background: radial-gradient(circle, rgba(129,140,248,.18), transparent 65%);
-  }
-  .aurora::after {
-    width: 720px; height: 720px; bottom: -340px; right: -200px;
-    background: radial-gradient(circle, rgba(45,212,191,.14), transparent 65%);
-  }
-  .aurora .grid {
-    position: absolute; inset: 0; opacity: .5;
-    background-image:
-      linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
-    background-size: 44px 44px;
-    mask-image: radial-gradient(ellipse 90% 60% at 50% 0%, #000 30%, transparent 75%);
-    -webkit-mask-image: radial-gradient(ellipse 90% 60% at 50% 0%, #000 30%, transparent 75%);
-  }
+  .masthead .sys { font-weight: 700; font-size: .82rem; letter-spacing: .04em; }
+  .masthead a { color: var(--dim); font-size: .78rem; text-decoration: underline;
+                text-underline-offset: 3px; }
+  .masthead a:hover { color: var(--accent); }
 
-  .wrap { max-width: 760px; margin: 0 auto; padding: 40px 20px 56px; }
-  .brand {
-    display: inline-flex; align-items: center; gap: 8px;
-    font-size: .8rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase;
-    color: var(--dim); margin-bottom: 22px;
-    padding: 7px 14px; border: 1px solid var(--line); border-radius: 999px;
-    background: var(--panel); backdrop-filter: blur(12px);
-  }
-  .brand .dot-live {
-    width: 7px; height: 7px; border-radius: 50%; background: #818cf8;
-    box-shadow: 0 0 10px #818cf8; animation: pulse 2.4s infinite;
-  }
-  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
   h1 {
-    font-size: clamp(2rem, 6vw, 2.5rem); font-weight: 800; letter-spacing: -.03em;
-    line-height: 1.12; margin: 0 0 10px;
+    font-family: var(--mono); font-weight: 700;
+    font-size: 1.3rem; letter-spacing: .01em;
+    margin: 0 0 6px; text-transform: uppercase;
   }
-  h1 .grad {
-    background: linear-gradient(92deg, #818cf8, var(--accent));
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-  }
-  .sub { color: var(--dim); font-size: 1rem; margin: 0 0 30px; max-width: 52ch; }
+  .sub { color: var(--dim); font-size: .95rem; margin: 0 0 22px; }
 
-  .card {
-    background: var(--panel); border: 1px solid var(--line);
-    border-radius: var(--radius); padding: 24px; margin-bottom: 16px;
-    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-    box-shadow: 0 20px 50px -24px rgba(0,0,0,.6);
+  .block { border: 1px solid var(--rule); margin-bottom: 18px; background: var(--paper); }
+  .block-head {
+    background: var(--ink); color: var(--paper);
+    font-family: var(--mono); font-weight: 600; font-size: .72rem;
+    letter-spacing: .08em; text-transform: uppercase;
+    padding: 7px 12px;
+    display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
   }
-  .card h2 {
-    font-size: .72rem; text-transform: uppercase; letter-spacing: .14em;
-    color: var(--dim); margin: 0 0 16px; font-weight: 600;
-  }
+  .block-head small { color: #b9b9b9; font-weight: 400; letter-spacing: .04em; }
+  .block-body { padding: 16px 14px; }
 
   button {
-    font: inherit; font-weight: 600; color: #fff; border: 0;
-    border-radius: var(--radius-sm); padding: 13px 18px; cursor: pointer;
-    background: linear-gradient(135deg, #4f46e5, #818cf8);
-    transition: transform .25s var(--ease), box-shadow .25s var(--ease),
-                filter .2s, opacity .2s;
-    box-shadow: 0 10px 30px -12px rgba(129,140,248,.45);
+    font-family: var(--mono); font-weight: 600; font-size: .85rem;
+    letter-spacing: .06em; text-transform: uppercase;
+    color: var(--paper); background: var(--ink);
+    border: 1px solid var(--ink); border-radius: 0;
+    padding: 12px 18px; cursor: pointer;
   }
-  button:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.08); }
-  button:active:not(:disabled) { transform: translateY(0) scale(.985); }
-  button:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+  button:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); }
+  button:disabled {
+    background: var(--paper); color: var(--dim);
+    border: 1px dashed var(--rule-soft); cursor: not-allowed;
+  }
   button:focus-visible, input:focus-visible, select:focus-visible {
-    outline: none; box-shadow: 0 0 0 3px rgba(129,140,248,.35);
+    outline: 2px solid var(--accent); outline-offset: 2px;
   }
   button.full { width: 100%; }
-  button.save {
-    background: linear-gradient(135deg, var(--green-deep), var(--green));
-    box-shadow: 0 12px 34px -14px rgba(16,185,129,.5);
-  }
-  .ghost {
-    background: var(--panel); border: 1px solid var(--line); color: var(--dim);
-    box-shadow: none; backdrop-filter: blur(10px);
-  }
-  .ghost:hover:not(:disabled) { border-color: var(--line-strong); color: var(--fg); filter: none; }
+  .ghost { background: var(--paper); color: var(--ink); border: 1px solid var(--ink); }
+  .ghost:hover:not(:disabled) { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 
   input, select {
-    font: inherit; width: 100%; padding: 13px 15px; border-radius: var(--radius-sm);
-    border: 1px solid var(--line); background: rgba(0,0,0,.35); color: var(--fg);
-    transition: border-color .2s, box-shadow .25s var(--ease);
+    font: inherit; width: 100%; padding: 12px 13px;
+    border: 1px solid var(--ink); border-radius: 0;
+    background: var(--paper); color: var(--ink);
   }
-  input::placeholder { color: rgba(139,147,163,.6); }
-  input:hover, select:hover { border-color: var(--line-strong); }
-  select option { background: #12141a; }
+  input::placeholder { color: #9a9a9a; }
   label {
-    display: block; font-size: .82rem; font-weight: 500; color: var(--dim);
-    margin: 16px 0 8px;
+    display: block; font-family: var(--mono); font-size: .72rem; font-weight: 600;
+    letter-spacing: .08em; text-transform: uppercase; color: var(--dim);
+    margin: 16px 0 7px;
   }
   label:first-of-type { margin-top: 0; }
 
   .msg {
-    border-radius: var(--radius-sm); padding: 13px 17px; margin-bottom: 14px;
-    font-weight: 500; font-size: .95rem; display: none;
-    backdrop-filter: blur(10px); animation: rise .45s var(--ease);
+    border: 1px solid; padding: 12px 14px; margin-bottom: 16px;
+    font-family: var(--mono); font-size: .85rem; display: none;
   }
   .msg.show { display: block; }
-  .msg.ok   { background: rgba(16,185,129,.12); color: #6ee7b7; border: 1px solid rgba(16,185,129,.3); }
-  .msg.warn { background: rgba(251,191,36,.1);  color: #fcd34d; border: 1px solid rgba(251,191,36,.28); }
-  .msg.err  { background: rgba(239,68,68,.12);  color: #fca5a5; border: 1px solid rgba(239,68,68,.3); }
+  .msg.ok   { border-color: var(--ok);   color: var(--ok); }
+  .msg.warn { border-color: var(--warn); color: var(--warn); }
+  .msg.err  { border-color: var(--err);  color: var(--err); }
   .hint { color: var(--dim); font-size: .84rem; margin: 8px 0 0; line-height: 1.55; }
   .hidden { display: none !important; }
   .row2 { display: grid; gap: 10px; grid-template-columns: 1fr auto; align-items: end; }
-  .status-line { display: flex; gap: 10px; align-items: center; margin-bottom: 16px;
-                 padding: 12px 16px; border-radius: var(--radius-sm);
-                 background: rgba(0,0,0,.25); border: 1px solid var(--line);
-                 font-size: .92rem; }
-  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--dim);
-         display: inline-block; flex: none; }
-  .dot.on { background: #34d399; box-shadow: 0 0 10px rgba(52,211,153,.7); }
-  .dot.off { background: #f87171; box-shadow: 0 0 10px rgba(248,113,113,.5); }
+
+  .status-line {
+    display: flex; gap: 10px; align-items: baseline; margin-bottom: 16px;
+    border: 1px solid var(--rule-soft); padding: 10px 12px;
+    font-family: var(--mono); font-size: .82rem;
+  }
+  .dot { font-weight: 700; }
+  .dot.on::before  { content: "OK";   color: var(--ok); }
+  .dot.off::before { content: "MISSING"; color: var(--err); }
 
   #term {
-    background: rgba(0, 0, 0, .55); border: 1px solid var(--line);
-    border-radius: var(--radius-sm);
-    padding: 14px 16px; margin: 0; height: 320px; overflow-y: auto;
-    font: 12.5px/1.6 ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
-    color: #86efac; white-space: pre-wrap; word-break: break-word;
+    background: var(--ink); color: #e8e6e1;
+    border: 1px solid var(--ink);
+    padding: 12px 14px; margin: 0; height: 320px; overflow-y: auto;
+    font: 12.5px/1.6 var(--mono);
+    white-space: pre-wrap; word-break: break-word;
   }
-  #term .t { color: #4b5563; }
-  .term-bar { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
-  .term-bar button { padding: 8px 15px; font-size: .84rem; }
-  a.quiet { color: var(--dim); font-size: .85rem; text-decoration: none; transition: color .2s; }
-  a.quiet:hover { color: var(--fg); }
-
-  @keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
-  section { animation: rise .55s var(--ease); }
-  .card { animation: rise .55s var(--ease) backwards; }
-  section .card:nth-of-type(2) { animation-delay: .06s; }
-  @media (prefers-reduced-motion: reduce) {
-    section, .card, .msg { animation: none; }
-    button, input, select { transition: none; }
+  #term .t { color: #8a8a8a; }
+  .term-bar { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+  .term-bar button { padding: 7px 14px; font-size: .74rem; }
+  a.quiet {
+    color: var(--dim); font-family: var(--mono); font-size: .78rem;
+    text-decoration: underline; text-underline-offset: 3px;
+  }
+  a.quiet:hover { color: var(--accent); }
+  .footnote {
+    margin-top: 26px; padding-top: 10px; border-top: 1px solid var(--rule);
+    display: flex; justify-content: space-between; gap: 10px;
+    font-family: var(--mono); font-size: .72rem; color: var(--dim);
   }
 </style>
 </head>
 <body>
-<div class="aurora" aria-hidden="true"><div class="grid"></div></div>
 <div class="wrap">
+
+  <div class="masthead">
+    <span class="sys">CREDITBOT / ADMIN CONSOLE</span>
+    <a href=".">back to check-in</a>
+  </div>
 
   <!-- ---------------- Admin login ---------------- -->
   <section id="login-view">
-    <span class="brand"><span class="dot-live"></span>CreditBot · Admin</span>
-    <h1>Mission <span class="grad">control</span></h1>
+    <h1>Admin sign-in</h1>
     <p class="sub">Discord setup and the live server terminal.</p>
     <div id="login-msg" class="msg err"></div>
-    <form id="login-form" class="card">
-      <label for="password">Admin password</label>
-      <input id="password" type="password" required autocomplete="current-password" autofocus>
-      <button class="full" type="submit" style="margin-top:16px">Sign in →</button>
-      <p class="hint">Uses WEB_ADMIN_PASSWORD, or the lab password if no
-        separate admin password is set.</p>
+    <form id="login-form" class="block">
+      <div class="block-head">Access <small>admin password</small></div>
+      <div class="block-body">
+        <label for="password">Admin password</label>
+        <input id="password" type="password" required autocomplete="current-password" autofocus>
+        <button class="full" type="submit" style="margin-top:14px">Sign in</button>
+        <p class="hint">Uses WEB_ADMIN_PASSWORD, or the lab password if no
+          separate admin password is set.</p>
+      </div>
     </form>
-    <p style="text-align:center"><a class="quiet" href=".">← Back to check-in</a></p>
   </section>
 
   <!-- ---------------- Main ---------------- -->
   <section id="main-view" class="hidden">
-    <span class="brand"><span class="dot-live"></span>CreditBot · Admin</span>
-    <h1>Mission <span class="grad">control</span></h1>
+    <h1>Admin console</h1>
     <p class="sub">Changes save to the server; the bot container needs one
       restart to pick them up.</p>
 
     <div id="main-msg" class="msg"></div>
 
-    <div class="card">
-      <h2>Discord server hookup</h2>
-      <div class="status-line"><span class="dot" id="dot-token"></span>
-        <span id="token-status">Checking…</span></div>
+    <div class="block">
+      <div class="block-head">Discord hookup <small>token → server → channels</small></div>
+      <div class="block-body">
+        <div class="status-line"><span class="dot" id="dot-token"></span>
+          <span id="token-status">Checking…</span></div>
 
-      <label for="token">Bot token</label>
-      <div class="row2">
-        <input id="token" type="password" autocomplete="off"
-               placeholder="Paste a new token, or leave blank to keep the saved one">
-        <button id="btn-test" type="button">Test</button>
-      </div>
-      <p class="hint">From discord.com/developers/applications → your app →
-        Bot → Reset Token. Testing lists the servers the bot is in and
-        unlocks the pickers below.</p>
+        <label for="token">Bot token</label>
+        <div class="row2">
+          <input id="token" type="password" autocomplete="off"
+                 placeholder="Paste a new token, or leave blank to keep the saved one">
+          <button id="btn-test" type="button">Test</button>
+        </div>
+        <p class="hint">From discord.com/developers/applications → your app →
+          Bot → Reset Token. Testing lists the servers the bot is in and
+          unlocks the pickers below.</p>
 
-      <label for="guild">Server (guild)</label>
-      <select id="guild"><option value="">— test the token first —</option></select>
+        <label for="guild">Server (guild)</label>
+        <select id="guild"><option value="">— test the token first —</option></select>
 
-      <label for="ch-checkin">Check-in channel</label>
-      <select id="ch-checkin" class="ch"></select>
-      <label for="ch-announcements">Announcements channel</label>
-      <select id="ch-announcements" class="ch"></select>
-      <label for="ch-memes">Memes channel (optional)</label>
-      <select id="ch-memes" class="ch"></select>
-      <label for="ch-notebooking">Notebooking channel (optional)</label>
-      <select id="ch-notebooking" class="ch"></select>
+        <label for="ch-checkin">Check-in channel</label>
+        <select id="ch-checkin" class="ch"></select>
+        <label for="ch-announcements">Announcements channel</label>
+        <select id="ch-announcements" class="ch"></select>
+        <label for="ch-memes">Memes channel (optional)</label>
+        <select id="ch-memes" class="ch"></select>
+        <label for="ch-notebooking">Notebooking channel (optional)</label>
+        <select id="ch-notebooking" class="ch"></select>
 
-      <button id="btn-save" class="full save" style="margin-top:20px">Save Discord settings</button>
-    </div>
-
-    <div class="card">
-      <h2>Server terminal</h2>
-      <pre id="term"></pre>
-      <div class="term-bar">
-        <button class="ghost" id="btn-pause" type="button">Pause</button>
-        <button class="ghost" id="btn-clear" type="button">Clear</button>
+        <button id="btn-save" class="full" style="margin-top:18px">Save Discord settings</button>
       </div>
     </div>
 
-    <p style="text-align:center"><a class="quiet" href=".">← Back to check-in</a></p>
+    <div class="block">
+      <div class="block-head">Server terminal <small>live</small></div>
+      <div class="block-body">
+        <pre id="term"></pre>
+        <div class="term-bar">
+          <button class="ghost" id="btn-pause" type="button">Pause</button>
+          <button class="ghost" id="btn-clear" type="button">Clear</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="footnote">
+      <span>creditbot · self-hosted</span>
+      <a class="quiet" href=".">back to check-in</a>
+    </div>
   </section>
 </div>
 
@@ -343,7 +316,7 @@ $("btn-test").addEventListener("click", async () => {
         "bot is not in any server yet — invite it from the Discord developer " +
         "portal (OAuth2 → URL Generator → bot).", "warn");
     } else {
-      say($("main-msg"), `✅ Token works — signed in as ${result.bot.username}. ` +
+      say($("main-msg"), `Token works — signed in as ${result.bot.username}. ` +
         "Now pick the server and channels.", "ok");
     }
     fillSelect($("guild"),
@@ -389,7 +362,7 @@ $("btn-save").addEventListener("click", async () => {
     saved = await api("/admin/config");
     renderConfig();
     if (channelsLoadedFor) { const g = channelsLoadedFor; channelsLoadedFor = ""; $("guild").value = g; await loadChannels(); }
-    say($("main-msg"), "💾 " + result.detail, "ok");
+    say($("main-msg"), result.detail, "ok");
   } catch (err) {
     say($("main-msg"), err.message, "err");
   } finally {
