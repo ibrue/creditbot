@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CreditBot Control Room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #faf5ea;
+    --card: #fffdf7;
+    --ink: #1c1a17;
+    --dim: #6d675e;
+    --rule: #1c1a17;
+    --rule-soft: #e2dccd;
+    --amber: #ffb03a;
+    --coral: #ff6b4a;
+    --pink: #ff9bd2;
+    --hl: #ffd84d;
+    --ok: #1a6b3c;
+    --warn: #8a5a00;
+    --err: #c0392b;
+    --stamp: #d33a2c;
+    --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+    --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --disp: "Bricolage Grotesque", "Arial Black", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--paper); }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font: 15.5px/1.55 var(--sans);
+    min-height: 100dvh;
+    padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+    overflow-x: hidden;
+  }
+
+  .backdrop { position: fixed; inset: 0; z-index: -1; pointer-events: none; }
+  .backdrop::before {
+    content: ""; position: absolute; inset: 0; opacity: .35;
+    background:
+      radial-gradient(420px 420px at 90% -8%,  var(--coral) 0%, transparent 62%),
+      radial-gradient(460px 460px at -10% 30%, var(--amber) 0%, transparent 60%),
+      radial-gradient(520px 520px at 72% 94%,  var(--pink)  0%, transparent 62%);
+  }
+  .backdrop::after {
+    content: ""; position: absolute; inset: 0; opacity: .5;
+    background-image: radial-gradient(rgba(28,26,23,.13) 1px, transparent 1.6px);
+    background-size: 22px 22px;
+    mask-image: linear-gradient(#000 0%, transparent 42%);
+    -webkit-mask-image: linear-gradient(#000 0%, transparent 42%);
+  }
+
+  .wrap { max-width: 720px; margin: 0 auto; padding: 14px 18px 60px; }
+
+  .glass {
+    background: rgba(255, 253, 247, .44);
+    -webkit-backdrop-filter: blur(18px) saturate(1.7);
+    backdrop-filter: blur(18px) saturate(1.7);
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, .7);
+    box-shadow:
+      0 10px 28px rgba(28, 26, 23, .13),
+      inset 0 1px 0 rgba(255, 255, 255, .85),
+      inset 0 -1px 0 rgba(28, 26, 23, .05);
+  }
+
+  .masthead {
+    position: sticky; top: 10px; z-index: 10;
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    padding: 11px 20px; margin-bottom: 30px;
+    font-family: var(--mono);
+  }
+  .masthead .sys { font-weight: 700; font-size: .8rem; letter-spacing: .05em; }
+  .masthead .sys em { font-style: normal; color: var(--stamp); }
+  .masthead a { color: var(--dim); font-size: .76rem; text-decoration: underline;
+                text-underline-offset: 3px; }
+  .masthead a:hover { color: var(--stamp); }
+
+  h1 {
+    font-family: var(--disp); font-weight: 800;
+    font-size: clamp(1.9rem, 6.5vw, 2.4rem); line-height: 1.05;
+    letter-spacing: -.015em; margin: 0 0 10px;
+  }
+  .hl { background: linear-gradient(transparent 58%, var(--hl) 58%, var(--hl) 92%, transparent 92%); }
+  .sub { color: var(--dim); font-size: .98rem; margin: 0 0 24px; max-width: 52ch; }
+
+  .block {
+    background: var(--card); border: 2px solid var(--rule); border-radius: 16px;
+    box-shadow: 6px 6px 0 var(--rule);
+    margin-bottom: 22px; overflow: hidden;
+  }
+  .block-head {
+    background: var(--ink); color: var(--paper);
+    font-family: var(--mono); font-weight: 600; font-size: .72rem;
+    letter-spacing: .09em; text-transform: uppercase;
+    padding: 8px 14px;
+    display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  }
+  .block-head small { color: #b9b3a8; font-weight: 400; letter-spacing: .04em; text-transform: none; }
+  .block-body { padding: 16px 15px; }
+
+  button {
+    font-family: var(--mono); font-weight: 700; font-size: .82rem;
+    letter-spacing: .07em; text-transform: uppercase;
+    color: var(--ink); border-radius: 999px; padding: 13px 20px;
+    cursor: pointer;
+    background: rgba(255, 253, 247, .5);
+    -webkit-backdrop-filter: blur(14px) saturate(1.6);
+    backdrop-filter: blur(14px) saturate(1.6);
+    border: 1.5px solid var(--ink);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 3px 3px 0 var(--ink);
+    transition: transform .12s ease, box-shadow .12s ease, background .15s ease;
+  }
+  button:hover:not(:disabled) { background: var(--hl); }
+  button:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 1px 1px 0 var(--ink); }
+  button:disabled {
+    color: var(--dim); background: transparent; cursor: not-allowed;
+    border: 1.5px dashed var(--rule-soft); box-shadow: none;
+  }
+  button:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 3px solid var(--coral); outline-offset: 2px;
+  }
+  button.full { width: 100%; }
+  .ghost { background: rgba(255,253,247,.35); }
+
+  input, select {
+    font: inherit; width: 100%; padding: 12px 16px;
+    border: 2px solid var(--ink); border-radius: 999px;
+    background: #fff; color: var(--ink);
+  }
+  select { border-radius: 14px; }
+  input::placeholder { color: #a49d92; }
+  label {
+    display: block; font-family: var(--mono); font-size: .72rem; font-weight: 600;
+    letter-spacing: .09em; text-transform: uppercase; color: var(--dim);
+    margin: 16px 0 8px;
+  }
+  label:first-of-type { margin-top: 0; }
+
+  .msg {
+    border: 2px solid; border-radius: 14px; padding: 12px 16px; margin-bottom: 18px;
+    font-family: var(--mono); font-size: .85rem; display: none;
+    background: var(--card);
+  }
+  .msg.show { display: block; }
+  .msg.ok   { border-color: var(--ok);   color: var(--ok);   box-shadow: 4px 4px 0 var(--ok); }
+  .msg.warn { border-color: var(--warn); color: var(--warn); box-shadow: 4px 4px 0 var(--warn); }
+  .msg.err  { border-color: var(--err);  color: var(--err);  box-shadow: 4px 4px 0 var(--err); }
+  .hint { color: var(--dim); font-size: .85rem; margin: 8px 0 0; line-height: 1.55; }
+  .hidden { display: none !important; }
+  .row2 { display: grid; gap: 10px; grid-template-columns: 1fr auto; align-items: end; }
+
+  .status-line {
+    display: flex; gap: 10px; align-items: baseline; margin-bottom: 16px;
+    border: 2px dashed var(--rule-soft); border-radius: 12px; padding: 10px 14px;
+    font-family: var(--mono); font-size: .82rem;
+  }
+  .dot { font-weight: 700; transform: rotate(-2deg); display: inline-block; }
+  .dot.on::before  { content: "STAMPED"; color: var(--ok); }
+  .dot.off::before { content: "MISSING"; color: var(--stamp); }
+
+  #term {
+    background: var(--ink); color: #efe9dc;
+    border-radius: 12px; border: 2px solid var(--ink);
+    padding: 13px 15px; margin: 0; height: 320px; overflow-y: auto;
+    font: 12.5px/1.6 var(--mono);
+    white-space: pre-wrap; word-break: break-word;
+  }
+  #term .t { color: #8f887b; }
+  .term-bar { display: flex; gap: 10px; justify-content: flex-end; margin-top: 12px; }
+  .term-bar button { padding: 8px 16px; font-size: .72rem; }
+  a.quiet {
+    color: var(--dim); font-family: var(--mono); font-size: .78rem;
+    text-decoration: underline; text-underline-offset: 3px;
+  }
+  a.quiet:hover { color: var(--stamp); }
+  .footnote {
+    margin-top: 30px; padding-top: 12px; border-top: 2px solid var(--rule);
+    display: flex; justify-content: space-between; gap: 10px;
+    font-family: var(--mono); font-size: .72rem; color: var(--dim);
+  }
+
+  @media (prefers-reduced-motion: reduce) { button { transition: none; } }
+</style>
+</head>
+<body>
+<div class="backdrop" aria-hidden="true"></div>
+<div class="wrap">
+
+  <div class="masthead glass">
+    <span class="sys">CREDITBOT<em>*</em> CONTROL ROOM</span>
+    <a href=".">back to check-in</a>
+  </div>
+
+  <!-- ---------------- Admin login ---------------- -->
+  <section id="login-view">
+    <h1>Who goes <span class="hl">there?</span></h1>
+    <p class="sub">Admins only beyond this point. The Discord hookup and the
+      all-seeing terminal await.</p>
+    <div id="login-msg" class="msg err"></div>
+    <form id="login-form" class="block">
+      <div class="block-head">Clearance check <small>no clipboard required</small></div>
+      <div class="block-body">
+        <label for="password">Admin password</label>
+        <input id="password" type="password" required autocomplete="current-password" autofocus>
+        <button class="full" type="submit" style="margin-top:16px">Open the control room</button>
+        <p class="hint">Uses WEB_ADMIN_PASSWORD, or the lab password if no
+          separate admin password is set.</p>
+      </div>
+    </form>
+  </section>
+
+  <!-- ---------------- Main ---------------- -->
+  <section id="main-view" class="hidden">
+    <h1>Control <span class="hl">room.</span></h1>
+    <p class="sub">Changes save to the server on the spot; the Discord bot
+      picks them up after one container restart.</p>
+
+    <div id="main-msg" class="msg"></div>
+
+    <div class="block">
+      <div class="block-head">Discord hookup <small>token → server → channels</small></div>
+      <div class="block-body">
+        <div class="status-line"><span class="dot" id="dot-token"></span>
+          <span id="token-status">Checking…</span></div>
+
+        <label for="token">Bot token</label>
+        <div class="row2">
+          <input id="token" type="password" autocomplete="off"
+                 placeholder="Paste a new token, or leave blank to keep the saved one">
+          <button id="btn-test" type="button">Test</button>
+        </div>
+        <p class="hint">From discord.com/developers/applications → your app →
+          Bot → Reset Token. Testing lists the servers the bot is in and
+          unlocks the pickers below.</p>
+
+        <label for="guild">Server (guild)</label>
+        <select id="guild"><option value="">— test the token first —</option></select>
+
+        <label for="ch-checkin">Check-in channel</label>
+        <select id="ch-checkin" class="ch"></select>
+        <label for="ch-announcements">Announcements channel</label>
+        <select id="ch-announcements" class="ch"></select>
+        <label for="ch-memes">Memes channel (optional)</label>
+        <select id="ch-memes" class="ch"></select>
+        <label for="ch-notebooking">Notebooking channel (optional)</label>
+        <select id="ch-notebooking" class="ch"></select>
+
+        <button id="btn-save" class="full" style="margin-top:18px">Save Discord settings</button>
+      </div>
+    </div>
+
+    <div class="block">
+      <div class="block-head">The server speaks <small>live feed</small></div>
+      <div class="block-body">
+        <pre id="term"></pre>
+        <div class="term-bar">
+          <button class="ghost" id="btn-pause" type="button">Pause</button>
+          <button class="ghost" id="btn-clear" type="button">Clear</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="footnote">
+      <span>creditbot · the lab is always watching</span>
+      <a class="quiet" href=".">back to check-in</a>
+    </div>
+  </section>
+</div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const BASE = "/app/api";
+
+function say(el, text, kind = "ok") {
+  el.textContent = text;
+  el.className = "msg " + kind + (text ? " show" : "");
+}
+async function api(path, options = {}) {
+  const res = await fetch(BASE + path, {
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  let body = {};
+  try { body = await res.json(); } catch { /* empty body */ }
+  if (!res.ok) {
+    const err = new Error(body.detail || `Something went wrong (${res.status})`);
+    err.status = res.status;
+    throw err;
+  }
+  return body;
+}
+
+let saved = {};          // last config fetched from the server
+let channelsLoadedFor = ""; // guild id whose channels fill the dropdowns
+
+const CHANNEL_FIELDS = [
+  ["ch-checkin", "checkin_channel_id"],
+  ["ch-announcements", "announcements_channel_id"],
+  ["ch-memes", "memes_channel_id"],
+  ["ch-notebooking", "notebooking_channel_id"],
+];
+
+function fillSelect(select, options, current, allowNone) {
+  select.innerHTML = "";
+  if (allowNone) select.append(new Option("— not set —", ""));
+  let found = !current;
+  for (const opt of options) {
+    const o = new Option(opt.label, opt.value);
+    if (opt.value === current) { o.selected = true; found = true; }
+    select.append(o);
+  }
+  if (!found && current) {
+    const o = new Option(`current: ${current}`, current);
+    o.selected = true;
+    select.append(o);
+  }
+}
+
+function renderConfig() {
+  const d = saved.discord || {};
+  $("dot-token").className = "dot " + (d.token_set ? "on" : "off");
+  $("token-status").textContent = d.token_set
+    ? `Token saved (ends …${d.token_tail})`
+    : "No bot token saved yet — paste one and hit Test.";
+  fillSelect($("guild"), [], d.guild_id, true);
+  for (const [id, key] of CHANNEL_FIELDS) fillSelect($(id), [], d[key], true);
+}
+
+// ---------- login ----------
+$("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  say($("login-msg"), "");
+  try {
+    await api("/admin/login", { method: "POST",
+      body: JSON.stringify({ password: $("password").value }) });
+    $("password").value = "";
+    await enter();
+  } catch (err) {
+    say($("login-msg"), err.message, "err");
+  }
+});
+
+async function enter() {
+  saved = await api("/admin/config");
+  renderConfig();
+  $("login-view").classList.add("hidden");
+  $("main-view").classList.remove("hidden");
+  startTerm();
+}
+
+// ---------- discord ----------
+$("btn-test").addEventListener("click", async () => {
+  const btn = $("btn-test");
+  btn.disabled = true;
+  say($("main-msg"), "");
+  try {
+    const result = await api("/admin/discord/test", { method: "POST",
+      body: JSON.stringify({ token: $("token").value || null }) });
+    if (!result.guilds.length) {
+      say($("main-msg"), `Token works (bot: ${result.bot.username}), but the ` +
+        "bot is not in any server yet — invite it from the Discord developer " +
+        "portal (OAuth2 → URL Generator → bot).", "warn");
+    } else {
+      say($("main-msg"), `Token works — signed in as ${result.bot.username}. ` +
+        "Now pick the server and channels.", "ok");
+    }
+    fillSelect($("guild"),
+      result.guilds.map((g) => ({ label: g.name, value: g.id })),
+      (saved.discord || {}).guild_id, true);
+    if ($("guild").value) await loadChannels();
+  } catch (err) {
+    say($("main-msg"), err.message, "err");
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$("guild").addEventListener("change", () => { loadChannels().catch(() => {}); });
+
+async function loadChannels() {
+  const guildId = $("guild").value;
+  if (!guildId || guildId === channelsLoadedFor) return;
+  const result = await api("/admin/discord/channels", { method: "POST",
+    body: JSON.stringify({ guild_id: guildId, token: $("token").value || null }) })
+    .catch((err) => { say($("main-msg"), err.message, "err"); return null; });
+  if (!result) return;
+  channelsLoadedFor = guildId;
+  const options = result.channels.map((c) => ({ label: `# ${c.name}`, value: c.id }));
+  const d = saved.discord || {};
+  for (const [id, key] of CHANNEL_FIELDS) fillSelect($(id), options, d[key], true);
+}
+
+$("btn-save").addEventListener("click", async () => {
+  const btn = $("btn-save");
+  btn.disabled = true;
+  try {
+    const body = {
+      guild_id: $("guild").value,
+      checkin_channel_id: $("ch-checkin").value,
+      announcements_channel_id: $("ch-announcements").value,
+      memes_channel_id: $("ch-memes").value,
+      notebooking_channel_id: $("ch-notebooking").value,
+    };
+    if ($("token").value.trim()) body.discord_token = $("token").value.trim();
+    const result = await api("/admin/config", { method: "POST", body: JSON.stringify(body) });
+    $("token").value = "";
+    saved = await api("/admin/config");
+    renderConfig();
+    if (channelsLoadedFor) { const g = channelsLoadedFor; channelsLoadedFor = ""; $("guild").value = g; await loadChannels(); }
+    say($("main-msg"), result.detail, "ok");
+  } catch (err) {
+    say($("main-msg"), err.message, "err");
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ---------- terminal ----------
+let termCursor = 0, termTimer = null, termPaused = false;
+
+function startTerm() {
+  if (termTimer) return;
+  termTick();
+  termTimer = setInterval(termTick, 2000);
+}
+
+async function termTick() {
+  if (termPaused) return;
+  let result;
+  try {
+    result = await api(`/admin/logs?since=${termCursor}`);
+  } catch (err) {
+    if (err.status === 401 || err.status === 403) {
+      clearInterval(termTimer); termTimer = null;
+      $("main-view").classList.add("hidden");
+      $("login-view").classList.remove("hidden");
+    }
+    return;
+  }
+  if (!result.lines.length) return;
+  termCursor = result.next;
+  const term = $("term");
+  const stick = term.scrollTop + term.clientHeight >= term.scrollHeight - 8;
+  for (const line of result.lines) {
+    const row = document.createElement("div");
+    const t = document.createElement("span");
+    t.className = "t";
+    t.textContent = line.t + "  ";
+    row.append(t, line.line);
+    term.append(row);
+  }
+  while (term.childElementCount > 600) term.firstElementChild.remove();
+  if (stick) term.scrollTop = term.scrollHeight;
+}
+
+$("btn-pause").addEventListener("click", () => {
+  termPaused = !termPaused;
+  $("btn-pause").textContent = termPaused ? "Resume" : "Pause";
+});
+$("btn-clear").addEventListener("click", () => { $("term").innerHTML = ""; });
+
+// ---------- boot ----------
+enter().catch(() => { /* not an admin yet — the login view stays */ });
+</script>
+</body>
+</html>

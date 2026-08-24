@@ -3,104 +3,298 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="color-scheme" content="dark">
 <title>Lab Check-In</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #101418; --panel: #171d23; --line: #232b33;
-    --fg: #e8eaed; --dim: #9aa0a6;
-    --green: #2e7d32; --green-lit: #388e3c;
-    --red: #c62828; --red-lit: #d32f2f;
-    --blue: #1565c0; --teal: #80cbc4; --amber: #ffb300;
-    --radius: 14px;
+    --paper: #faf5ea;
+    --card: #fffdf7;
+    --ink: #1c1a17;
+    --dim: #6d675e;
+    --rule: #1c1a17;
+    --rule-soft: #e2dccd;
+    --amber: #ffb03a;
+    --coral: #ff6b4a;
+    --pink: #ff9bd2;
+    --hl: #ffd84d;
+    --ok: #1a6b3c;
+    --warn: #8a5a00;
+    --err: #c0392b;
+    --stamp: #d33a2c;
+    --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+    --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --disp: "Bricolage Grotesque", "Arial Black", system-ui, sans-serif;
   }
   * { box-sizing: border-box; }
+  html { background: var(--paper); }
   body {
-    margin: 0; background: var(--bg); color: var(--fg);
-    font: 16px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif;
-    min-height: 100dvh; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+    margin: 0; background: var(--paper); color: var(--ink);
+    font: 15.5px/1.55 var(--sans);
+    min-height: 100dvh;
+    padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+    overflow-x: hidden;
   }
-  .wrap { max-width: 620px; margin: 0 auto; padding: 20px 16px 48px; }
-  h1 { font-size: 1.7rem; margin: 0 0 4px; }
-  .sub { color: var(--dim); font-size: .95rem; margin: 0 0 24px; }
-  .card {
-    background: var(--panel); border: 1px solid var(--line);
-    border-radius: var(--radius); padding: 18px; margin-bottom: 16px;
+
+  /* ---- warm blobs + halftone: something for the glass to refract ---- */
+  .backdrop { position: fixed; inset: 0; z-index: -1; pointer-events: none; }
+  .backdrop::before {
+    content: ""; position: absolute; inset: 0; opacity: .35;
+    background:
+      radial-gradient(420px 420px at 88% -6%,  var(--amber) 0%, transparent 62%),
+      radial-gradient(460px 460px at -12% 26%, var(--pink)  0%, transparent 60%),
+      radial-gradient(520px 520px at 70% 92%,  var(--coral) 0%, transparent 62%);
   }
-  .card h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em;
-             color: var(--dim); margin: 0 0 12px; font-weight: 600; }
+  .backdrop::after {
+    content: ""; position: absolute; inset: 0; opacity: .5;
+    background-image: radial-gradient(rgba(28,26,23,.13) 1px, transparent 1.6px);
+    background-size: 22px 22px;
+    mask-image: linear-gradient(#000 0%, transparent 42%);
+    -webkit-mask-image: linear-gradient(#000 0%, transparent 42%);
+  }
+
+  .wrap { max-width: 620px; margin: 0 auto; padding: 14px 18px 60px; }
+
+  /* ---- liquid glass (the Apple way: light, refractive, lozenge) ---- */
+  .glass {
+    background: rgba(255, 253, 247, .44);
+    -webkit-backdrop-filter: blur(18px) saturate(1.7);
+    backdrop-filter: blur(18px) saturate(1.7);
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, .7);
+    box-shadow:
+      0 10px 28px rgba(28, 26, 23, .13),
+      inset 0 1px 0 rgba(255, 255, 255, .85),
+      inset 0 -1px 0 rgba(28, 26, 23, .05);
+  }
+
+  /* ---- masthead: floating glass capsule ---- */
+  .masthead {
+    position: sticky; top: 10px; z-index: 10;
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    padding: 11px 20px; margin-bottom: 30px;
+    font-family: var(--mono);
+  }
+  .masthead .sys { font-weight: 700; font-size: .8rem; letter-spacing: .05em; }
+  .masthead .sys em { font-style: normal; color: var(--stamp); }
+  .masthead .clock { font-size: .78rem; color: var(--dim); font-variant-numeric: tabular-nums; }
+
+  h1 {
+    font-family: var(--disp); font-weight: 800;
+    font-size: clamp(1.9rem, 6.5vw, 2.5rem); line-height: 1.05;
+    letter-spacing: -.015em; margin: 0 0 10px;
+  }
+  .hl { background: linear-gradient(transparent 58%, var(--hl) 58%, var(--hl) 92%, transparent 92%); }
+  .sub { color: var(--dim); font-size: .98rem; margin: 0 0 24px; max-width: 46ch; }
+
+  /* ---- zine cards: paper, hard offset shadow ---- */
+  .block {
+    background: var(--card); border: 2px solid var(--rule); border-radius: 16px;
+    box-shadow: 6px 6px 0 var(--rule);
+    margin-bottom: 22px; overflow: hidden;
+  }
+  .block-head {
+    background: var(--ink); color: var(--paper);
+    font-family: var(--mono); font-weight: 600; font-size: .72rem;
+    letter-spacing: .09em; text-transform: uppercase;
+    padding: 8px 14px;
+    display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  }
+  .block-head small { color: #b9b3a8; font-weight: 400; letter-spacing: .04em; text-transform: none; }
+  .block-body { padding: 16px 15px; }
+
+  /* ---- controls: glass lozenges ---- */
   button {
-    font: inherit; font-weight: 600; color: #fff; border: 0;
-    border-radius: var(--radius); padding: 14px 18px; cursor: pointer;
-    background: var(--blue); width: 100%; transition: filter .15s, opacity .15s;
+    font-family: var(--mono); font-weight: 700; font-size: .85rem;
+    letter-spacing: .07em; text-transform: uppercase;
+    color: var(--ink); border-radius: 999px; padding: 14px 20px;
+    cursor: pointer; width: 100%;
+    background: rgba(255, 253, 247, .5);
+    -webkit-backdrop-filter: blur(14px) saturate(1.6);
+    backdrop-filter: blur(14px) saturate(1.6);
+    border: 1.5px solid var(--ink);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 3px 3px 0 var(--ink);
+    transition: transform .12s ease, box-shadow .12s ease, background .15s ease;
   }
-  button:hover:not(:disabled) { filter: brightness(1.12); }
-  button:disabled { opacity: .5; cursor: not-allowed; }
-  button:focus-visible, input:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
-  .big { font-size: 1.35rem; padding: 26px 18px; }
-  .checkin { background: var(--green); }
-  .checkout { background: var(--red); }
-  .ghost { background: transparent; border: 1px solid var(--line); color: var(--dim); }
-  .row { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+  button:hover:not(:disabled) { background: var(--hl); }
+  button:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 1px 1px 0 var(--ink); }
+  button:disabled {
+    color: var(--dim); background: transparent; cursor: not-allowed;
+    border: 1.5px dashed var(--rule-soft); box-shadow: none;
+  }
+  button:focus-visible, input:focus-visible { outline: 3px solid var(--coral); outline-offset: 2px; }
+  .big { padding: 24px 20px; font-size: 1.02rem; }
+  .checkin:not(:disabled)  { background: rgba(126, 217, 154, .45); }
+  .checkin:hover:not(:disabled)  { background: rgba(126, 217, 154, .8); }
+  .checkout:not(:disabled) { background: rgba(255, 138, 118, .45); }
+  .checkout:hover:not(:disabled) { background: rgba(255, 138, 118, .8); }
+  .ghost { background: rgba(255,253,247,.35); }
+  .row { display: grid; gap: 14px; grid-template-columns: 1fr 1fr; }
   @media (max-width: 460px) { .row { grid-template-columns: 1fr; } }
   input {
-    font: inherit; width: 100%; padding: 14px; border-radius: var(--radius);
-    border: 1px solid var(--line); background: #0c1013; color: var(--fg);
+    font: inherit; width: 100%; padding: 13px 16px;
+    border: 2px solid var(--ink); border-radius: 999px;
+    background: #fff; color: var(--ink);
   }
-  label { display: block; font-size: .85rem; color: var(--dim); margin-bottom: 6px; }
-  .msg { border-radius: var(--radius); padding: 14px 16px; margin-bottom: 16px;
-         font-weight: 600; display: none; }
+  input::placeholder { color: #a49d92; }
+  label {
+    display: block; font-family: var(--mono); font-size: .72rem; font-weight: 600;
+    letter-spacing: .09em; text-transform: uppercase; color: var(--dim);
+    margin-bottom: 8px;
+  }
+
+  /* ---- messages: ruled notes ---- */
+  .msg {
+    border: 2px solid; border-radius: 14px; padding: 12px 16px; margin-bottom: 18px;
+    font-family: var(--mono); font-size: .85rem; display: none;
+    background: var(--card);
+  }
   .msg.show { display: block; }
-  .msg.ok { background: rgba(46,125,50,.18); color: #a5d6a7; border: 1px solid rgba(46,125,50,.4); }
-  .msg.warn { background: rgba(255,179,0,.14); color: #ffcc80; border: 1px solid rgba(255,179,0,.35); }
-  .msg.err { background: rgba(198,40,40,.16); color: #ef9a9a; border: 1px solid rgba(198,40,40,.4); }
-  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center; }
-  .stat b { display: block; font-size: 1.5rem; }
-  .stat span { font-size: .75rem; color: var(--dim); text-transform: uppercase; letter-spacing: .05em; }
+  .msg.ok   { border-color: var(--ok);   color: var(--ok);   box-shadow: 4px 4px 0 var(--ok); }
+  .msg.warn { border-color: var(--warn); color: var(--warn); box-shadow: 4px 4px 0 var(--warn); }
+  .msg.err  { border-color: var(--err);  color: var(--err);  box-shadow: 4px 4px 0 var(--err); }
+
+  /* ---- stats strip ---- */
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); }
+  .stat { padding: 15px 15px 13px; border-right: 2px solid var(--rule); }
+  .stat:last-child { border-right: 0; }
+  .stat b {
+    display: block; font-family: var(--disp); font-weight: 800;
+    font-size: 2rem; line-height: 1.05; font-variant-numeric: tabular-nums;
+  }
+  .stat span {
+    font-family: var(--mono); font-size: .6rem; font-weight: 600;
+    color: var(--dim); text-transform: uppercase; letter-spacing: .11em;
+  }
+
+  /* ---- ledger rows ---- */
   ul { list-style: none; margin: 0; padding: 0; }
-  li { display: flex; justify-content: space-between; gap: 12px;
-       padding: 9px 0; border-bottom: 1px solid var(--line); }
+  li {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+    padding: 10px 0; border-bottom: 2px dotted var(--rule-soft);
+  }
   li:last-child { border-bottom: 0; }
-  li .meta { color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .rank { color: var(--dim); width: 1.6em; display: inline-block; }
-  .you { color: var(--teal); }
-  .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
-  .tabs button { background: transparent; border: 1px solid var(--line);
-                 color: var(--dim); padding: 8px 14px; font-size: .9rem; }
-  .tabs button[aria-selected="true"] { background: var(--line); color: var(--fg); }
-  .who { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-  .who b { font-size: 1.15rem; }
+  li .meta {
+    font-family: var(--mono); font-size: .84rem; color: var(--dim);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  .rank {
+    font-family: var(--mono); color: var(--dim); width: 2em;
+    display: inline-block; font-variant-numeric: tabular-nums; font-size: .84rem;
+  }
+  .you { color: var(--stamp); font-weight: 700; }
+  .empty { color: var(--dim); font-size: .92rem; font-style: italic; }
+
+  /* member picker */
+  #member-list li { padding: 6px 0; border-bottom: 0; }
+  #member-list button {
+    text-align: left; text-transform: none; letter-spacing: 0;
+    font-family: var(--sans); font-weight: 600; font-size: .98rem; padding: 12px 18px;
+  }
+
+  /* ---- tabs: glass segmented capsule ---- */
+  .tabs {
+    display: inline-flex; gap: 4px; margin-bottom: 14px; padding: 4px;
+    border: 1.5px solid var(--ink); border-radius: 999px;
+    background: rgba(255,253,247,.5);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  }
+  .tabs button {
+    width: auto; border: 0; box-shadow: none; background: transparent;
+    color: var(--dim); padding: 7px 16px; font-size: .72rem;
+  }
+  .tabs button:hover:not(:disabled) { background: transparent; color: var(--ink); }
+  .tabs button:active:not(:disabled) { transform: none; }
+  .tabs button[aria-selected="true"] {
+    background: var(--ink); color: var(--paper);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.15);
+  }
+
+  /* ---- app header ---- */
+  .who { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;
+         flex-wrap: wrap; margin-bottom: 6px; }
+  .who h1 { margin-bottom: 2px; }
+  .who .sub { margin-bottom: 0; font-family: var(--mono); font-size: .8rem; }
+  .pill {
+    font-family: var(--mono); font-size: .68rem; font-weight: 700;
+    letter-spacing: .07em; text-transform: uppercase;
+    padding: 8px 14px; white-space: nowrap; margin-top: 10px;
+    transform: rotate(2deg);
+  }
+  .pill.in { color: var(--ok); border-color: rgba(26,107,60,.5); transform: rotate(-2deg); }
   .hidden { display: none !important; }
-  .empty { color: var(--dim); font-style: italic; }
-  .pill { font-size: .75rem; padding: 3px 9px; border-radius: 999px;
-          background: rgba(128,203,196,.15); color: var(--teal); white-space: nowrap; }
+  a.quiet {
+    color: var(--dim); font-family: var(--mono); font-size: .78rem;
+    text-decoration: underline; text-underline-offset: 3px;
+  }
+  a.quiet:hover { color: var(--stamp); }
+  .footnote {
+    margin-top: 30px; padding-top: 12px; border-top: 2px solid var(--rule);
+    display: flex; justify-content: space-between; gap: 10px;
+    font-family: var(--mono); font-size: .72rem; color: var(--dim);
+  }
+
+  /* ---- face login ---- */
+  #face-video {
+    width: 100%; background: #14120f; display: block;
+    transform: scaleX(-1); /* mirror, like looking in a mirror */
+    aspect-ratio: 4 / 3; object-fit: cover;
+    border: 2px solid var(--ink); border-radius: 12px;
+  }
+  #face-status {
+    font-family: var(--mono); font-size: .82rem; color: var(--dim);
+    margin: 12px 0 0; min-height: 1.4em;
+  }
+  #face-status.good { color: var(--ok); font-weight: 700; }
+
+  @media (prefers-reduced-motion: reduce) { button { transition: none; } }
 </style>
 </head>
 <body>
+<div class="backdrop" aria-hidden="true"></div>
 <div class="wrap">
+
+  <div class="masthead glass">
+    <span class="sys" id="sys-name">CREDITBOT<em>*</em> LAB CHECK-IN</span>
+    <span class="clock" id="clock"></span>
+  </div>
 
   <!-- ---------------- Login ---------------- -->
   <section id="login-view">
-    <h1>🔬 Lab Check-In</h1>
-    <p class="sub">Enter the lab password to continue.</p>
+    <h1>Papers, <span class="hl">please.</span></h1>
+    <p class="sub">State the lab password to proceed.</p>
     <div id="login-msg" class="msg err"></div>
-    <form id="login-form" class="card" autocomplete="on">
-      <label for="password">Lab password</label>
-      <input id="password" name="password" type="password" required
-             autocomplete="current-password" autofocus>
-      <button id="login-btn" type="submit" style="margin-top:14px">Sign in</button>
+    <form id="login-form" class="block" autocomplete="on">
+      <div class="block-head">Access control <small>one password, zero bureaucracy</small></div>
+      <div class="block-body">
+        <label for="password">Lab password</label>
+        <input id="password" name="password" type="password" required
+               autocomplete="current-password" autofocus>
+        <button id="login-btn" type="submit" style="margin-top:16px">Enter the lab</button>
+      </div>
     </form>
   </section>
 
   <!-- ---------------- Pick who you are ---------------- -->
   <section id="pick-view" class="hidden">
-    <h1>Who are you?</h1>
-    <p class="sub">Pick your name so check-ins land on your account.</p>
+    <h1>Face the <span class="hl">machine.</span></h1>
+    <p class="sub">Let the camera recognize you — or point at your name like it's 1999.</p>
     <div id="pick-msg" class="msg err"></div>
-    <div class="card">
-      <label for="filter">Search</label>
-      <input id="filter" type="search" placeholder="Start typing a name…" autocomplete="off">
-      <ul id="member-list" style="margin-top:12px"></ul>
+    <div class="block hidden" id="face-card">
+      <div class="block-head">Recognition booth <small>it judges kindly</small></div>
+      <div class="block-body">
+        <video id="face-video" autoplay playsinline muted></video>
+        <p id="face-status">Summoning the camera…</p>
+      </div>
+    </div>
+    <div class="block">
+      <div class="block-head">The register <small>analog fallback</small></div>
+      <div class="block-body">
+        <label for="filter">Search</label>
+        <input id="filter" type="search" placeholder="Start typing a name…" autocomplete="off">
+        <ul id="member-list" style="margin-top:12px"></ul>
+      </div>
     </div>
     <button class="ghost" id="signout-pick">Sign out</button>
   </section>
@@ -109,15 +303,16 @@
   <section id="app-view" class="hidden">
     <div class="who">
       <div>
-        <h1 id="hello">Hi</h1>
+        <h1 id="hello">Citizen</h1>
         <p class="sub" id="tier"></p>
       </div>
-      <span class="pill" id="state-pill"></span>
+      <span class="pill glass" id="state-pill"></span>
     </div>
 
-    <div id="app-msg" class="msg"></div>
+    <div id="app-msg" class="msg" style="margin-top:16px"></div>
 
-    <div class="card">
+    <div class="block" style="margin-top:16px">
+      <div class="block-head">Social credit balance <small>the ledger remembers</small></div>
       <div class="stats">
         <div class="stat"><b id="s-total">0</b><span>All-time</span></div>
         <div class="stat"><b id="s-week">0</b><span>This week</span></div>
@@ -125,33 +320,39 @@
       </div>
     </div>
 
-    <div class="row" style="margin-bottom:16px">
-      <button class="big checkin" id="btn-checkin">✅ Check In</button>
-      <button class="big checkout" id="btn-checkout">👋 Check Out</button>
+    <div class="row" style="margin-bottom:22px">
+      <button class="big checkin" id="btn-checkin">Check in</button>
+      <button class="big checkout" id="btn-checkout">Check out</button>
     </div>
 
-    <div class="card">
-      <h2>In the lab now</h2>
-      <ul id="whos-in"></ul>
+    <div class="block">
+      <div class="block-head">In the lab right now <small>allegedly working</small></div>
+      <div class="block-body"><ul id="whos-in"></ul></div>
     </div>
 
-    <div class="card">
-      <h2>Leaderboard</h2>
-      <div class="tabs" role="tablist">
-        <button role="tab" id="tab-weekly" aria-selected="true">This week</button>
-        <button role="tab" id="tab-alltime" aria-selected="false">All time</button>
+    <div class="block">
+      <div class="block-head">Hall of glory <small>updated ruthlessly</small></div>
+      <div class="block-body">
+        <div class="tabs" role="tablist">
+          <button role="tab" id="tab-weekly" aria-selected="true">This week</button>
+          <button role="tab" id="tab-alltime" aria-selected="false">All time</button>
+        </div>
+        <ul id="board"></ul>
       </div>
-      <ul id="board"></ul>
     </div>
 
-    <div class="card">
-      <h2>Your recent credits</h2>
-      <ul id="history"></ul>
+    <div class="block">
+      <div class="block-head">Your permanent record <small>nothing is forgotten</small></div>
+      <div class="block-body"><ul id="history"></ul></div>
     </div>
 
     <div class="row">
       <button class="ghost" id="switch">Not you?</button>
       <button class="ghost" id="signout">Sign out</button>
+    </div>
+    <div class="footnote">
+      <span>creditbot · the lab is always watching</span>
+      <a class="quiet" href="admin">control room</a>
     </div>
   </section>
 </div>
@@ -161,8 +362,29 @@
 const $ = (id) => document.getElementById(id);
 const views = { login: $("login-view"), pick: $("pick-view"), app: $("app-view") };
 
+// The same page serves /app (multi-user) and /app/station (the shared
+// desktop): station mode signs straight in as the station account.
+const STATION = /\/station\/?$/.test(location.pathname);
+if (STATION) {
+  document.title = "Lab Station";
+  $("sys-name").innerHTML = "CREDITBOT<em>*</em> STATION TERMINAL";
+  document.querySelector("#login-view .sub").textContent =
+    "This terminal signs in as the shared lab account. No questions asked.";
+}
+
+// Masthead clock — a punch clock should show the time.
+function tickClock() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  $("clock").textContent =
+    `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+}
+tickClock();
+setInterval(tickClock, 1000);
+
 function show(name) {
   for (const [key, el] of Object.entries(views)) el.classList.toggle("hidden", key !== name);
+  if (name === "pick") startFace(); else stopFace();
 }
 function say(el, text, kind = "ok") {
   el.textContent = text;
@@ -187,7 +409,7 @@ $("login-form").addEventListener("submit", async (e) => {
   btn.disabled = true;
   say($("login-msg"), "");
   try {
-    await api("/login", { method: "POST", body: JSON.stringify({ password: $("password").value }) });
+    await api("/login", { method: "POST", body: JSON.stringify({ password: $("password").value, station: STATION }) });
     $("password").value = "";
     await refresh();
   } catch (err) {
@@ -205,14 +427,13 @@ function renderMembers() {
   const list = $("member-list");
   list.innerHTML = "";
   if (!shown.length) {
-    list.innerHTML = '<li class="empty">No members match.</li>';
+    list.innerHTML = '<li class="empty">No members match. Ghosts cannot check in.</li>';
     return;
   }
   for (const m of shown.slice(0, 40)) {
     const li = document.createElement("li");
     const btn = document.createElement("button");
     btn.className = "ghost";
-    btn.style.textAlign = "left";
     btn.textContent = m.username;
     btn.addEventListener("click", () => choose(m.discord_id));
     li.append(btn);
@@ -229,6 +450,83 @@ async function choose(discord_id) {
 }
 $("filter").addEventListener("input", renderMembers);
 
+// ---------- face login ----------
+// While the "face the machine" view is open, a webcam frame goes to the
+// server every ~1.5s; the server runs the same face models as the kiosk
+// and signs the matched person in. The name picker stays as fallback.
+let faceStream = null, faceTimer = null, faceBusy = false;
+
+function faceSay(text, good = false) {
+  $("face-status").textContent = text;
+  $("face-status").className = good ? "good" : "";
+}
+
+async function startFace() {
+  if (faceStream) return;
+  const card = $("face-card");
+  try {
+    const status = await api("/face-status");
+    if (!status.available) { card.classList.add("hidden"); return; }
+  } catch { card.classList.add("hidden"); return; }
+
+  card.classList.remove("hidden");
+  $("face-video").classList.add("hidden");  // no dead black box until video flows
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    faceSay(window.isSecureContext
+      ? "This browser has no camera support — the register below still works."
+      : "Camera needs HTTPS (or localhost) — the register below still works.");
+    return;
+  }
+  try {
+    faceStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+      audio: false,
+    });
+  } catch {
+    faceSay("Camera blocked or missing — the register below still works.");
+    return;
+  }
+  $("face-video").classList.remove("hidden");
+  $("face-video").srcObject = faceStream;
+  faceSay("Hold still, citizen…");
+  faceTimer = setInterval(faceTick, 1500);
+}
+
+function stopFace() {
+  if (faceTimer) { clearInterval(faceTimer); faceTimer = null; }
+  if (faceStream) {
+    for (const track of faceStream.getTracks()) track.stop();
+    faceStream = null;
+    $("face-video").srcObject = null;
+  }
+  faceBusy = false;
+}
+
+async function faceTick() {
+  const video = $("face-video");
+  if (faceBusy || !faceStream || video.videoWidth === 0) return;
+  faceBusy = true;
+  try {
+    const canvas = document.createElement("canvas");
+    const scale = Math.min(1, 640 / video.videoWidth);
+    canvas.width = Math.round(video.videoWidth * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
+    canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+    const image_b64 = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
+    const result = await api("/face-login", { method: "POST", body: JSON.stringify({ image_b64 }) });
+    faceSay(`Recognized: ${result.name}. Welcome back.`, true);
+    stopFace();
+    await refresh();
+    return;
+  } catch (err) {
+    // 422 no face / 404 no match / 409 nobody enrolled — keep trying,
+    // but tell the person what the server saw.
+    faceSay(err.message);
+  } finally {
+    faceBusy = false;
+  }
+}
+
 // ---------- main ----------
 let board = { weekly: [], alltime: [] };
 let currentTab = "weekly";
@@ -239,13 +537,13 @@ function renderBoard() {
   const list = $("board");
   list.innerHTML = "";
   if (!rows.length) {
-    list.innerHTML = '<li class="empty">Nothing yet this week.</li>';
+    list.innerHTML = '<li class="empty">No glory yet this week.</li>';
     return;
   }
   rows.forEach((row, i) => {
     const li = document.createElement("li");
     const who = document.createElement("span");
-    who.innerHTML = `<span class="rank">${i + 1}.</span>`;
+    who.innerHTML = `<span class="rank">${String(i + 1).padStart(2, "0")}</span>`;
     who.append(row.username);
     if (String(row.discord_id) === String(meId)) who.classList.add("you");
     const meta = document.createElement("span");
@@ -270,14 +568,14 @@ async function act(path, btn) {
     const result = await api(path, { method: "POST" });
     if (result.status === "checked_in") {
       const bonuses = (result.bonuses || []).join(" · ");
-      say($("app-msg"), "✅ Checked in!" + (bonuses ? "  " + bonuses : ""), "ok");
+      say($("app-msg"), "Checked in. The Algorithm smiles upon you." + (bonuses ? "  " + bonuses : ""), "ok");
     } else if (result.status === "already_checked_in") {
-      say($("app-msg"), `ℹ️ You're already checked in (${result.minutes_so_far} min ago).`, "warn");
+      say($("app-msg"), `Easy there — you're already on the clock (${result.minutes_so_far} min).`, "warn");
     } else if (result.status === "checked_out") {
-      const weekend = result.weekend_bonus ? " (weekend bonus!)" : "";
-      say($("app-msg"), `👋 ${result.duration} in the lab · +${result.credits_earned} credits${weekend}`, "ok");
+      const weekend = result.weekend_bonus ? " (weekend bonus)" : "";
+      say($("app-msg"), `Checked out: ${result.duration} in the lab, +${result.credits_earned} credits${weekend}. Spend them wisely.`, "ok");
     } else if (result.status === "not_checked_in") {
-      say($("app-msg"), "ℹ️ You weren't checked in.", "warn");
+      say($("app-msg"), "You weren't even checked in. Bold.", "warn");
     }
     await refresh({ keepMessage: true });
   } catch (err) {
@@ -313,20 +611,23 @@ async function refresh({ keepMessage = false } = {}) {
   }
 
   if (!me.person) {
+    if (STATION) { show("login"); return; }  // station never uses the picker
     members = await api("/members").then((r) => r.members).catch(() => []);
     renderMembers();
     show("pick");
     return;
   }
 
+  $("switch").classList.toggle("hidden", STATION);
   const p = me.person;
   meId = p.discord_id;
-  $("hello").textContent = `Hi, ${p.name}`;
-  $("tier").textContent = `${p.tier_emoji} ${p.tier}`;
+  $("hello").textContent = `Citizen ${p.name}`;
+  $("tier").textContent = `Rank: ${p.tier}`;
   $("s-total").textContent = p.total_credits;
   $("s-week").textContent = p.weekly_credits;
   $("s-streak").textContent = p.streak;
-  $("state-pill").textContent = p.checked_in ? `In the lab · ${p.checked_in_for}` : "Not checked in";
+  $("state-pill").textContent = p.checked_in ? `On the clock · ${p.checked_in_for}` : "Off the clock";
+  $("state-pill").classList.toggle("in", p.checked_in);
   $("btn-checkin").disabled = p.checked_in;
   $("btn-checkout").disabled = !p.checked_in;
   if (!keepMessage) say($("app-msg"), "");
@@ -341,7 +642,7 @@ async function refresh({ keepMessage = false } = {}) {
   const inList = $("whos-in");
   inList.innerHTML = "";
   if (!inLab.checked_in.length) {
-    inList.innerHTML = '<li class="empty">Nobody is in the lab right now.</li>';
+    inList.innerHTML = '<li class="empty">Nobody’s here. Suspiciously quiet.</li>';
   } else {
     for (const person of inLab.checked_in) {
       const li = document.createElement("li");
@@ -362,7 +663,7 @@ async function refresh({ keepMessage = false } = {}) {
   const histList = $("history");
   histList.innerHTML = "";
   if (!hist.transactions.length) {
-    histList.innerHTML = '<li class="empty">No credits yet — check in to get started.</li>';
+    histList.innerHTML = '<li class="empty">Blank slate. The ledger awaits.</li>';
   } else {
     for (const t of hist.transactions) {
       const li = document.createElement("li");
@@ -371,7 +672,7 @@ async function refresh({ keepMessage = false } = {}) {
       const meta = document.createElement("span");
       meta.className = "meta";
       meta.textContent = (t.amount > 0 ? "+" : "") + t.amount;
-      meta.style.color = t.amount >= 0 ? "#a5d6a7" : "#ef9a9a";
+      meta.style.color = t.amount >= 0 ? "var(--ok)" : "var(--err)";
       li.append(reason, meta);
       histList.append(li);
     }

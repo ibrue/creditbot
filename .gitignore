@@ -50,3 +50,6 @@ bot.log
 # OS
 .DS_Store
 Thumbs.db
+
+# Admin-page settings (contains the Discord bot token)
+settings_overrides.json

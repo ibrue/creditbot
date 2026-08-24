@@ -11,6 +11,14 @@ Config (environment):
   WEB_HTTPS       1 when reached over HTTPS, so cookies are marked Secure
   WEB_TRUST_PROXY 1 only when a reverse proxy you control sets
                   X-Forwarded-For; otherwise the header is ignored
+
+Two login pages are served:
+  /app          multi-user — after the password, people sign in with face
+                recognition (if the server has the models) or by picking
+                their name.
+  /app/station  single-identity — for the shared desktop. The password
+                signs the machine straight in as the station account
+                (WEB_STATION_ID / WEB_STATION_NAME), no picker.
 """
 import os
 from datetime import datetime
@@ -23,12 +31,17 @@ import checkin_logic
 import config
 import database
 import web_auth
+import web_face
 from utils.helpers import format_duration, get_credit_tier
 
 WEB_ENABLED = os.getenv("WEB_ENABLED", "1") == "1"
 WEB_PASSWORD = os.getenv("WEB_PASSWORD", "")
 WEB_HTTPS = os.getenv("WEB_HTTPS", "0") == "1"
 WEB_TRUST_PROXY = os.getenv("WEB_TRUST_PROXY", "0") == "1"
+
+# The shared account that /app/station signs in as (the lab desktop).
+WEB_STATION_ID = os.getenv("WEB_STATION_ID", "station")
+WEB_STATION_NAME = os.getenv("WEB_STATION_NAME", "Lab Computer")
 
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 INDEX_FILE = os.path.join(WEB_DIR, "index.html")
@@ -107,10 +120,19 @@ def index():
     return FileResponse(INDEX_FILE, media_type="text/html")
 
 
+@router.get("/station", include_in_schema=False)
+def station_page():
+    """Same page as /; the script reads the URL and becomes station mode."""
+    return index()
+
+
 # ---------------------------------------------------------------- login
 
 class LoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=200)
+    # True on the /app/station page: the password signs the machine in as
+    # the shared station account directly, skipping the identity step.
+    station: bool = False
 
 
 @router.post("/api/login")
@@ -139,8 +161,13 @@ def login(req: LoginRequest, request: Request):
         raise HTTPException(status_code=401, detail="Wrong password")
 
     limiter.reset(key)
-    response = JSONResponse(content={"status": "ok"})
-    set_session_cookie(response, {})
+    payload = {}
+    if req.station:
+        database.get_or_create_user(WEB_STATION_ID, WEB_STATION_NAME)
+        payload = {"discord_id": WEB_STATION_ID, "name": WEB_STATION_NAME,
+                   "station": True}
+    response = JSONResponse(content={"status": "ok", "station": req.station})
+    set_session_cookie(response, payload)
     return response
 
 
@@ -211,6 +238,40 @@ def select(req: SelectRequest, creditbot_session: str | None = Cookie(default=No
     })
     set_session_cookie(response, {"discord_id": user["discord_id"],
                                   "name": user["username"]})
+    return response
+
+
+# ----------------------------------------------------------- face login
+
+class FaceLoginRequest(BaseModel):
+    # One JPEG webcam frame, base64. ~8MB cap matches the kiosk photo cap.
+    image_b64: str = Field(min_length=1, max_length=8_000_000)
+
+
+@router.get("/api/face-status")
+def face_status(creditbot_session: str | None = Cookie(default=None)):
+    require_session(creditbot_session)
+    return {"available": web_face.available()}
+
+
+@router.post("/api/face-login")
+def face_login(req: FaceLoginRequest,
+               creditbot_session: str | None = Cookie(default=None)):
+    require_session(creditbot_session)
+    try:
+        match = web_face.identify(req.image_b64)
+    except web_face.FaceLoginError as e:
+        raise HTTPException(status_code=e.status, detail=e.detail)
+
+    user = database.get_user(match["discord_id"])
+    name = user["username"] if user else match["name"]
+    print(f"🌐 Web face login: {name} (score {match['score']:.2f})")
+    response = JSONResponse(content={"status": "ok",
+                                     "discord_id": match["discord_id"],
+                                     "name": name,
+                                     "score": round(match["score"], 3)})
+    set_session_cookie(response, {"discord_id": match["discord_id"],
+                                  "name": name})
     return response
 
 
