@@ -74,6 +74,15 @@
   .empty { color: var(--dim); font-style: italic; }
   .pill { font-size: .75rem; padding: 3px 9px; border-radius: 999px;
           background: rgba(128,203,196,.15); color: var(--teal); white-space: nowrap; }
+  a.quiet { color: var(--dim); font-size: .85rem; text-decoration: none; }
+  a.quiet:hover { color: var(--fg); text-decoration: underline; }
+  #face-video {
+    width: 100%; border-radius: var(--radius); background: #000;
+    transform: scaleX(-1); /* mirror, like looking in a mirror */
+    aspect-ratio: 4 / 3; object-fit: cover;
+  }
+  #face-status { color: var(--dim); margin: 10px 0 0; min-height: 1.5em; }
+  #face-status.good { color: #a5d6a7; }
 </style>
 </head>
 <body>
@@ -95,9 +104,15 @@
   <!-- ---------------- Pick who you are ---------------- -->
   <section id="pick-view" class="hidden">
     <h1>Who are you?</h1>
-    <p class="sub">Pick your name so check-ins land on your account.</p>
+    <p class="sub">Look at the camera, or pick your name below.</p>
     <div id="pick-msg" class="msg err"></div>
+    <div class="card hidden" id="face-card">
+      <h2>Face login</h2>
+      <video id="face-video" autoplay playsinline muted></video>
+      <p id="face-status">Starting camera…</p>
+    </div>
     <div class="card">
+      <h2>Pick your name</h2>
       <label for="filter">Search</label>
       <input id="filter" type="search" placeholder="Start typing a name…" autocomplete="off">
       <ul id="member-list" style="margin-top:12px"></ul>
@@ -153,6 +168,9 @@
       <button class="ghost" id="switch">Not you?</button>
       <button class="ghost" id="signout">Sign out</button>
     </div>
+    <p style="text-align:center; margin-top:18px">
+      <a class="quiet" href="admin">⚙️ Admin — Discord setup &amp; server logs</a>
+    </p>
   </section>
 </div>
 
@@ -161,8 +179,18 @@
 const $ = (id) => document.getElementById(id);
 const views = { login: $("login-view"), pick: $("pick-view"), app: $("app-view") };
 
+// The same page serves /app (multi-user) and /app/station (the shared
+// desktop): station mode signs straight in as the station account.
+const STATION = /\/station\/?$/.test(location.pathname);
+if (STATION) {
+  document.title = "Lab Station";
+  document.querySelector("#login-view .sub").textContent =
+    "Station sign-in — this computer checks in as the shared lab account.";
+}
+
 function show(name) {
   for (const [key, el] of Object.entries(views)) el.classList.toggle("hidden", key !== name);
+  if (name === "pick") startFace(); else stopFace();
 }
 function say(el, text, kind = "ok") {
   el.textContent = text;
@@ -187,7 +215,7 @@ $("login-form").addEventListener("submit", async (e) => {
   btn.disabled = true;
   say($("login-msg"), "");
   try {
-    await api("/login", { method: "POST", body: JSON.stringify({ password: $("password").value }) });
+    await api("/login", { method: "POST", body: JSON.stringify({ password: $("password").value, station: STATION }) });
     $("password").value = "";
     await refresh();
   } catch (err) {
@@ -228,6 +256,81 @@ async function choose(discord_id) {
   }
 }
 $("filter").addEventListener("input", renderMembers);
+
+// ---------- face login ----------
+// While the "who are you" view is open, a webcam frame goes to the
+// server every ~1.5s; the server runs the same face models as the kiosk
+// and signs the matched person in. The name picker stays as fallback.
+let faceStream = null, faceTimer = null, faceBusy = false;
+
+function faceSay(text, good = false) {
+  $("face-status").textContent = text;
+  $("face-status").className = good ? "good" : "";
+}
+
+async function startFace() {
+  if (faceStream) return;
+  const card = $("face-card");
+  try {
+    const status = await api("/face-status");
+    if (!status.available) { card.classList.add("hidden"); return; }
+  } catch { card.classList.add("hidden"); return; }
+
+  card.classList.remove("hidden");
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    faceSay(window.isSecureContext
+      ? "This browser has no camera support — pick your name below."
+      : "Camera needs HTTPS (or localhost) — pick your name below.");
+    return;
+  }
+  try {
+    faceStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+      audio: false,
+    });
+  } catch {
+    faceSay("Camera blocked or missing — pick your name below.");
+    return;
+  }
+  $("face-video").srcObject = faceStream;
+  faceSay("Looking for your face…");
+  faceTimer = setInterval(faceTick, 1500);
+}
+
+function stopFace() {
+  if (faceTimer) { clearInterval(faceTimer); faceTimer = null; }
+  if (faceStream) {
+    for (const track of faceStream.getTracks()) track.stop();
+    faceStream = null;
+    $("face-video").srcObject = null;
+  }
+  faceBusy = false;
+}
+
+async function faceTick() {
+  const video = $("face-video");
+  if (faceBusy || !faceStream || video.videoWidth === 0) return;
+  faceBusy = true;
+  try {
+    const canvas = document.createElement("canvas");
+    const scale = Math.min(1, 640 / video.videoWidth);
+    canvas.width = Math.round(video.videoWidth * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
+    canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+    const image_b64 = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
+    const result = await api("/face-login", { method: "POST", body: JSON.stringify({ image_b64 }) });
+    faceSay(`Welcome, ${result.name}!`, true);
+    stopFace();
+    await refresh();
+    return;
+  } catch (err) {
+    // 422 no face / 404 no match / 409 nobody enrolled — keep trying,
+    // but tell the person what the server saw.
+    faceSay(err.message);
+  } finally {
+    faceBusy = false;
+  }
+}
 
 // ---------- main ----------
 let board = { weekly: [], alltime: [] };
@@ -313,12 +416,14 @@ async function refresh({ keepMessage = false } = {}) {
   }
 
   if (!me.person) {
+    if (STATION) { show("login"); return; }  // station never uses the picker
     members = await api("/members").then((r) => r.members).catch(() => []);
     renderMembers();
     show("pick");
     return;
   }
 
+  $("switch").classList.toggle("hidden", STATION);
   const p = me.person;
   meId = p.discord_id;
   $("hello").textContent = `Hi, ${p.name}`;

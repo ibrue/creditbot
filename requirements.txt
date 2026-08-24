@@ -4,3 +4,8 @@ APScheduler>=3.10.0
 fastapi>=0.110.0
 uvicorn>=0.29.0
 requests>=2.31.0
+# Face login on the web client (same YuNet/SFace models as the kiosk).
+# If these fail to install the server still runs — face login just
+# reports unavailable and the name picker takes over.
+opencv-python-headless>=4.9.0
+numpy>=1.26.0

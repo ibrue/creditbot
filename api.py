@@ -29,7 +29,14 @@ from pydantic import BaseModel, Field
 import checkin_logic
 import config
 import database
+import web_face
+import webadmin
 import webapp
+import weblog
+
+# Mirror everything the server prints into the ring buffer behind the
+# admin page's terminal panel. Installed at import so early lines show.
+weblog.install()
 
 API_KEY = os.getenv("KIOSK_API_KEY", "")
 DISCORD_API = "https://discord.com/api/v10"
@@ -39,6 +46,7 @@ app = FastAPI(title="Social Credit Kiosk API", version="1.0.0")
 # The browser client lives under /app so it cannot collide with the
 # kiosk's endpoints, which are authenticated completely differently.
 app.include_router(webapp.router, prefix="/app", tags=["web"])
+app.include_router(webadmin.router, prefix="/app", tags=["web-admin"])
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
@@ -51,10 +59,18 @@ def startup():
         print("   Set KIOSK_API_KEY in your .env file (any long random string).")
     if webapp.WEB_ENABLED:
         if webapp.WEB_PASSWORD:
-            print("🌐 Web client at /app (sign in with the lab password)")
+            print("🌐 Web client at /app (multi-user, face login when available)")
+            print(f"🖥️ Station page at /app/station (signs in as "
+                  f"{webapp.WEB_STATION_NAME!r})")
         else:
             print("⚠️  WEB_PASSWORD is not set — the web client at /app will "
                   "reject every sign-in until it is.")
+        print("⚙️ Admin page at /app/admin (Discord setup + live terminal)")
+        if web_face.available():
+            print("🙂 Face login models loaded")
+        else:
+            print("ℹ️ Face login unavailable (OpenCV or models missing) — "
+                  "the name picker is the fallback")
 
 
 def require_api_key(key: str = Security(api_key_header)):

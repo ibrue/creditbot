@@ -118,9 +118,16 @@ Every Sunday at 6 PM:
   `docker compose up -d --build` runs the bot plus the kiosk API on
   port 8765 sharing the same database.
 - **Check in from a browser:** the same server hosts a web client at
-  `http://<server>:8765/app` — sign in with a shared lab password, pick
-  your name, and check in or out from any computer or phone. Reach it from
-  outside the lab over Tailscale rather than port-forwarding.
+  `http://<server>:8765/app` — sign in with a shared lab password, then
+  face login at the webcam (same models and enrollments as the kiosk) or
+  pick your name, from any computer or phone. The shared lab desktop uses
+  `http://<server>:8765/app/station` instead: the password alone signs it
+  in as one station account, no picker. Reach either from outside the lab
+  over Tailscale rather than port-forwarding.
+- **Admin from a browser:** `http://<server>:8765/app/admin` hooks the
+  system up to your Discord server with a GUI — paste the bot token, test
+  it, pick the server and channels from dropdowns — and shows a live
+  terminal of what the server is doing.
 - **Check-in kiosk:** see [kiosk/README.md](kiosk/README.md) — a GUI for
   Windows 10/11 or Linux with big Check In / Check Out buttons that
   recognizes enrolled members' faces via webcam and checks them in with

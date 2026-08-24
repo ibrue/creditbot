@@ -102,8 +102,50 @@ Next: set up the kiosk itself → [kiosk/README.md](kiosk/README.md)
 
 ## The web client
 
-Once the containers are up, open **`http://<nas-ip>:8765/app`** from any
-computer or phone on the network.
+Once the containers are up, three pages are served:
+
+| Page | Who it's for | How sign-in works |
+|---|---|---|
+| `http://<nas-ip>:8765/app` | everyone's phones/laptops | lab password, then **face login** at the webcam (or pick your name from the list) |
+| `http://<nas-ip>:8765/app/station` | the shared lab desktop | lab password only — the machine signs in as one shared station account (`WEB_STATION_NAME`, default "Lab Computer"), no picker |
+| `http://<nas-ip>:8765/app/admin` | whoever runs the lab | `WEB_ADMIN_PASSWORD` (falls back to the lab password) — Discord setup GUI + a live server terminal |
+
+Face login uses the same YuNet/SFace models as the kiosk, matched against
+the faces enrolled at the kiosk. The models are baked in at `docker
+compose build` time; if that download was skipped (offline build), the
+page silently falls back to the name picker. **Browser cameras only work
+on HTTPS or localhost** — over plain `http://<nas-ip>` the page will tell
+you and offer the picker instead. The easy HTTPS fix is `tailscale serve`
+(see below), then set `WEB_HTTPS=1`.
+
+The admin page lets you hook up the Discord server without touching
+`.env`: paste the bot token → **Test** (lists the servers the bot is in)
+→ pick the server and channels from dropdowns → **Save**. Settings are
+written to `data/settings_overrides.json` (they win over `.env`); the
+API applies them immediately and the bot picks them up on
+`docker compose restart bot`.
+
+### Migrating off `deploy/local.patch` (if you used one)
+
+If this NAS previously carried a local patch that hard-wired the web
+client to a single station identity: that behavior is now built in as the
+`/app/station` page, so the patch must be retired or every future update
+will refuse to deploy with a CONFLICT.
+
+```bash
+cd /volume1/docker/creditbot
+rm deploy/local.patch                      # retire the divergence
+# keep the existing station account: set WEB_STATION_ID in .env to the
+# discord_id the patch used (check:  sqlite3 data/social_credit.db \
+#   "select discord_id, username from users where username like '%Lab%'")
+nano .env                                  # WEB_STATION_ID=... , WEB_STATION_NAME=...
+```
+
+Then let the updater deploy normally (or `git pull && docker compose up
+-d --build api` by hand) and bookmark `/app/station` on the desktop.
+
+Open **`http://<nas-ip>:8765/app`** from any computer or phone on the
+network.
 
 Set `WEB_PASSWORD` in `.env` first — until you do, the page loads but every
 sign-in is refused. Pick something long:
@@ -119,6 +161,9 @@ python -c "import secrets; print(secrets.token_urlsafe(18))"
 | `WEB_HTTPS` | `0` | `1` when reached over HTTPS, so cookies are marked Secure. |
 | `WEB_TRUST_PROXY` | `0` | `1` only if a reverse proxy you control sets `X-Forwarded-For`. Left at `0`, the header is ignored so nobody can reset their own rate limit. |
 | `WEB_SECRET` | *(generated)* | Signing key for session cookies. Generated and kept beside the database if unset. |
+| `WEB_STATION_ID` | `station` | The account `/app/station` signs in as. Point it at an existing member's discord_id to reuse an account. |
+| `WEB_STATION_NAME` | `Lab Computer` | Display name for the station account. |
+| `WEB_ADMIN_PASSWORD` | *(unset)* | Password for `/app/admin`. Unset = the lab password also opens the admin page. |
 
 **One shared password means one shared identity.** Anyone who knows it can
 check *any* member in or out — there is nothing stopping someone checking

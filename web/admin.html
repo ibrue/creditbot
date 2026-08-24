@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>CreditBot Admin</title>
+<style>
+  :root {
+    --bg: #101418; --panel: #171d23; --line: #232b33;
+    --fg: #e8eaed; --dim: #9aa0a6;
+    --blue: #1565c0; --teal: #80cbc4; --amber: #ffb300;
+    --green: #2e7d32; --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif;
+    min-height: 100dvh; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 20px 16px 48px; }
+  h1 { font-size: 1.7rem; margin: 0 0 4px; }
+  .sub { color: var(--dim); font-size: .95rem; margin: 0 0 24px; }
+  .card { background: var(--panel); border: 1px solid var(--line);
+          border-radius: var(--radius); padding: 18px; margin-bottom: 16px; }
+  .card h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em;
+             color: var(--dim); margin: 0 0 12px; font-weight: 600; }
+  button {
+    font: inherit; font-weight: 600; color: #fff; border: 0;
+    border-radius: var(--radius); padding: 12px 16px; cursor: pointer;
+    background: var(--blue); transition: filter .15s, opacity .15s;
+  }
+  button:hover:not(:disabled) { filter: brightness(1.12); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 2px solid var(--teal); outline-offset: 2px; }
+  button.full { width: 100%; }
+  button.save { background: var(--green); }
+  .ghost { background: transparent; border: 1px solid var(--line); color: var(--dim); }
+  input, select {
+    font: inherit; width: 100%; padding: 12px; border-radius: var(--radius);
+    border: 1px solid var(--line); background: #0c1013; color: var(--fg);
+  }
+  label { display: block; font-size: .85rem; color: var(--dim); margin: 14px 0 6px; }
+  label:first-of-type { margin-top: 0; }
+  .msg { border-radius: var(--radius); padding: 12px 14px; margin-bottom: 14px;
+         font-weight: 600; display: none; }
+  .msg.show { display: block; }
+  .msg.ok { background: rgba(46,125,50,.18); color: #a5d6a7; border: 1px solid rgba(46,125,50,.4); }
+  .msg.warn { background: rgba(255,179,0,.14); color: #ffcc80; border: 1px solid rgba(255,179,0,.35); }
+  .msg.err { background: rgba(198,40,40,.16); color: #ef9a9a; border: 1px solid rgba(198,40,40,.4); }
+  .hint { color: var(--dim); font-size: .85rem; margin: 6px 0 0; }
+  .hidden { display: none !important; }
+  .row2 { display: grid; gap: 10px; grid-template-columns: 1fr auto; align-items: end; }
+  .status-line { display: flex; gap: 8px; align-items: baseline; margin-bottom: 12px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--dim);
+         display: inline-block; flex: none; align-self: center; }
+  .dot.on { background: #66bb6a; } .dot.off { background: #ef5350; }
+  #term {
+    background: #06090c; border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 12px 14px; margin: 0; height: 320px; overflow-y: auto;
+    font: 12.5px/1.55 ui-monospace, "Cascadia Mono", Consolas, monospace;
+    color: #9ccc9c; white-space: pre-wrap; word-break: break-word;
+  }
+  #term .t { color: #546e7a; }
+  .term-bar { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+  .term-bar button { padding: 8px 14px; font-size: .85rem; }
+  a.quiet { color: var(--dim); font-size: .85rem; text-decoration: none; }
+  a.quiet:hover { color: var(--fg); text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ---------------- Admin login ---------------- -->
+  <section id="login-view">
+    <h1>⚙️ CreditBot Admin</h1>
+    <p class="sub">Discord setup and the live server terminal.</p>
+    <div id="login-msg" class="msg err"></div>
+    <form id="login-form" class="card">
+      <label for="password">Admin password</label>
+      <input id="password" type="password" required autocomplete="current-password" autofocus>
+      <button class="full" type="submit" style="margin-top:14px">Sign in</button>
+      <p class="hint">Uses WEB_ADMIN_PASSWORD, or the lab password if no
+        separate admin password is set.</p>
+    </form>
+    <p style="text-align:center"><a class="quiet" href=".">← Back to check-in</a></p>
+  </section>
+
+  <!-- ---------------- Main ---------------- -->
+  <section id="main-view" class="hidden">
+    <h1>⚙️ CreditBot Admin</h1>
+    <p class="sub">Changes save to the server; the bot container needs one
+      restart to pick them up.</p>
+
+    <div id="main-msg" class="msg"></div>
+
+    <div class="card">
+      <h2>Discord server hookup</h2>
+      <div class="status-line"><span class="dot" id="dot-token"></span>
+        <span id="token-status">Checking…</span></div>
+
+      <label for="token">Bot token</label>
+      <div class="row2">
+        <input id="token" type="password" autocomplete="off"
+               placeholder="Paste a new token, or leave blank to keep the saved one">
+        <button id="btn-test" type="button">Test</button>
+      </div>
+      <p class="hint">From discord.com/developers/applications → your app →
+        Bot → Reset Token. Testing lists the servers the bot is in and
+        unlocks the pickers below.</p>
+
+      <label for="guild">Server (guild)</label>
+      <select id="guild"><option value="">— test the token first —</option></select>
+
+      <label for="ch-checkin">Check-in channel</label>
+      <select id="ch-checkin" class="ch"></select>
+      <label for="ch-announcements">Announcements channel</label>
+      <select id="ch-announcements" class="ch"></select>
+      <label for="ch-memes">Memes channel (optional)</label>
+      <select id="ch-memes" class="ch"></select>
+      <label for="ch-notebooking">Notebooking channel (optional)</label>
+      <select id="ch-notebooking" class="ch"></select>
+
+      <button id="btn-save" class="full save" style="margin-top:18px">Save Discord settings</button>
+    </div>
+
+    <div class="card">
+      <h2>Server terminal</h2>
+      <pre id="term"></pre>
+      <div class="term-bar">
+        <button class="ghost" id="btn-pause" type="button">Pause</button>
+        <button class="ghost" id="btn-clear" type="button">Clear</button>
+      </div>
+    </div>
+
+    <p style="text-align:center"><a class="quiet" href=".">← Back to check-in</a></p>
+  </section>
+</div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const BASE = "/app/api";
+
+function say(el, text, kind = "ok") {
+  el.textContent = text;
+  el.className = "msg " + kind + (text ? " show" : "");
+}
+async function api(path, options = {}) {
+  const res = await fetch(BASE + path, {
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  let body = {};
+  try { body = await res.json(); } catch { /* empty body */ }
+  if (!res.ok) {
+    const err = new Error(body.detail || `Something went wrong (${res.status})`);
+    err.status = res.status;
+    throw err;
+  }
+  return body;
+}
+
+let saved = {};          // last config fetched from the server
+let channelsLoadedFor = ""; // guild id whose channels fill the dropdowns
+
+const CHANNEL_FIELDS = [
+  ["ch-checkin", "checkin_channel_id"],
+  ["ch-announcements", "announcements_channel_id"],
+  ["ch-memes", "memes_channel_id"],
+  ["ch-notebooking", "notebooking_channel_id"],
+];
+
+function fillSelect(select, options, current, allowNone) {
+  select.innerHTML = "";
+  if (allowNone) select.append(new Option("— not set —", ""));
+  let found = !current;
+  for (const opt of options) {
+    const o = new Option(opt.label, opt.value);
+    if (opt.value === current) { o.selected = true; found = true; }
+    select.append(o);
+  }
+  if (!found && current) {
+    const o = new Option(`current: ${current}`, current);
+    o.selected = true;
+    select.append(o);
+  }
+}
+
+function renderConfig() {
+  const d = saved.discord || {};
+  $("dot-token").className = "dot " + (d.token_set ? "on" : "off");
+  $("token-status").textContent = d.token_set
+    ? `Token saved (ends …${d.token_tail})`
+    : "No bot token saved yet — paste one and hit Test.";
+  fillSelect($("guild"), [], d.guild_id, true);
+  for (const [id, key] of CHANNEL_FIELDS) fillSelect($(id), [], d[key], true);
+}
+
+// ---------- login ----------
+$("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  say($("login-msg"), "");
+  try {
+    await api("/admin/login", { method: "POST",
+      body: JSON.stringify({ password: $("password").value }) });
+    $("password").value = "";
+    await enter();
+  } catch (err) {
+    say($("login-msg"), err.message, "err");
+  }
+});
+
+async function enter() {
+  saved = await api("/admin/config");
+  renderConfig();
+  $("login-view").classList.add("hidden");
+  $("main-view").classList.remove("hidden");
+  startTerm();
+}
+
+// ---------- discord ----------
+$("btn-test").addEventListener("click", async () => {
+  const btn = $("btn-test");
+  btn.disabled = true;
+  say($("main-msg"), "");
+  try {
+    const result = await api("/admin/discord/test", { method: "POST",
+      body: JSON.stringify({ token: $("token").value || null }) });
+    if (!result.guilds.length) {
+      say($("main-msg"), `Token works (bot: ${result.bot.username}), but the ` +
+        "bot is not in any server yet — invite it from the Discord developer " +
+        "portal (OAuth2 → URL Generator → bot).", "warn");
+    } else {
+      say($("main-msg"), `✅ Token works — signed in as ${result.bot.username}. ` +
+        "Now pick the server and channels.", "ok");
+    }
+    fillSelect($("guild"),
+      result.guilds.map((g) => ({ label: g.name, value: g.id })),
+      (saved.discord || {}).guild_id, true);
+    if ($("guild").value) await loadChannels();
+  } catch (err) {
+    say($("main-msg"), err.message, "err");
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$("guild").addEventListener("change", () => { loadChannels().catch(() => {}); });
+
+async function loadChannels() {
+  const guildId = $("guild").value;
+  if (!guildId || guildId === channelsLoadedFor) return;
+  const result = await api("/admin/discord/channels", { method: "POST",
+    body: JSON.stringify({ guild_id: guildId, token: $("token").value || null }) })
+    .catch((err) => { say($("main-msg"), err.message, "err"); return null; });
+  if (!result) return;
+  channelsLoadedFor = guildId;
+  const options = result.channels.map((c) => ({ label: `# ${c.name}`, value: c.id }));
+  const d = saved.discord || {};
+  for (const [id, key] of CHANNEL_FIELDS) fillSelect($(id), options, d[key], true);
+}
+
+$("btn-save").addEventListener("click", async () => {
+  const btn = $("btn-save");
+  btn.disabled = true;
+  try {
+    const body = {
+      guild_id: $("guild").value,
+      checkin_channel_id: $("ch-checkin").value,
+      announcements_channel_id: $("ch-announcements").value,
+      memes_channel_id: $("ch-memes").value,
+      notebooking_channel_id: $("ch-notebooking").value,
+    };
+    if ($("token").value.trim()) body.discord_token = $("token").value.trim();
+    const result = await api("/admin/config", { method: "POST", body: JSON.stringify(body) });
+    $("token").value = "";
+    saved = await api("/admin/config");
+    renderConfig();
+    if (channelsLoadedFor) { const g = channelsLoadedFor; channelsLoadedFor = ""; $("guild").value = g; await loadChannels(); }
+    say($("main-msg"), "💾 " + result.detail, "ok");
+  } catch (err) {
+    say($("main-msg"), err.message, "err");
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ---------- terminal ----------
+let termCursor = 0, termTimer = null, termPaused = false;
+
+function startTerm() {
+  if (termTimer) return;
+  termTick();
+  termTimer = setInterval(termTick, 2000);
+}
+
+async function termTick() {
+  if (termPaused) return;
+  let result;
+  try {
+    result = await api(`/admin/logs?since=${termCursor}`);
+  } catch (err) {
+    if (err.status === 401 || err.status === 403) {
+      clearInterval(termTimer); termTimer = null;
+      $("main-view").classList.add("hidden");
+      $("login-view").classList.remove("hidden");
+    }
+    return;
+  }
+  if (!result.lines.length) return;
+  termCursor = result.next;
+  const term = $("term");
+  const stick = term.scrollTop + term.clientHeight >= term.scrollHeight - 8;
+  for (const line of result.lines) {
+    const row = document.createElement("div");
+    const t = document.createElement("span");
+    t.className = "t";
+    t.textContent = line.t + "  ";
+    row.append(t, line.line);
+    term.append(row);
+  }
+  while (term.childElementCount > 600) term.firstElementChild.remove();
+  if (stick) term.scrollTop = term.scrollHeight;
+}
+
+$("btn-pause").addEventListener("click", () => {
+  termPaused = !termPaused;
+  $("btn-pause").textContent = termPaused ? "Resume" : "Pause";
+});
+$("btn-clear").addEventListener("click", () => { $("term").innerHTML = ""; });
+
+// ---------- boot ----------
+enter().catch(() => { /* not an admin yet — the login view stays */ });
+</script>
+</body>
+</html>
