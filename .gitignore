@@ -6,6 +6,10 @@ tailscale/.env
 # Tailscale node identity and keys (never commit)
 tailscale/state/
 
+# Web session signing key (generated per server, never shared)
+.web_secret
+data/.web_secret
+
 # Database (user data)
 *.db
 data/

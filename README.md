@@ -117,6 +117,10 @@ Every Sunday at 6 PM:
 - **UGREEN NAS (or any Docker host):** see [NAS_SETUP.md](NAS_SETUP.md) —
   `docker compose up -d --build` runs the bot plus the kiosk API on
   port 8765 sharing the same database.
+- **Check in from a browser:** the same server hosts a web client at
+  `http://<server>:8765/app` — sign in with a shared lab password, pick
+  your name, and check in or out from any computer or phone. Reach it from
+  outside the lab over Tailscale rather than port-forwarding.
 - **Check-in kiosk:** see [kiosk/README.md](kiosk/README.md) — a GUI for
   Windows 10/11 or Linux with big Check In / Check Out buttons that
   recognizes enrolled members' faces via webcam and checks them in with
