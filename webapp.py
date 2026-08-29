@@ -30,12 +30,14 @@ import secrets
 from datetime import datetime
 
 from fastapi import APIRouter, Cookie, HTTPException, Request, Response
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import (FileResponse, JSONResponse, RedirectResponse,
+                               Response)
 from pydantic import BaseModel, Field
 
 import checkin_logic
 import config
 import database
+import discord_lookup
 import web_auth
 import web_face
 from utils.helpers import format_duration, get_credit_tier
@@ -319,6 +321,10 @@ class FaceScanRequest(BaseModel):
 class EnrollRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     samples: list[str] = Field(min_length=1, max_length=12)
+    # Picked from the Discord member list. Without it the face is attached
+    # to an invented id, and the credits earned here never meet the ones
+    # earned on Discord.
+    discord_id: str | None = Field(default=None, max_length=32)
 
 
 def require_local(request: Request):
@@ -368,6 +374,33 @@ def face_scan(req: FaceScanRequest, request: Request,
     return result
 
 
+@router.get("/api/discord/members")
+def discord_members(q: str = "", request: Request = None):
+    """The Discord server's members, so a newcomer can pick themselves.
+
+    Password-free like enrolment itself, and limited to the lab network
+    the same way. If Discord cannot answer — no token, no GUILD_ID, a
+    revoked token — that is reported rather than raised, so the page can
+    fall back to typing a name.
+    """
+    require_local(request)
+    if not discord_lookup.available():
+        return {"available": False, "members": [],
+                "detail": "Discord is not hooked up on this server yet."}
+    try:
+        members = (discord_lookup.search_members(q) if q.strip()
+                   else discord_lookup.list_members())
+    except discord_lookup.DiscordUnavailable as e:
+        return {"available": False, "members": [], "detail": str(e)}
+
+    known = {str(u["discord_id"]) for u in database.get_all_users()}
+    enrolled = {str(r["discord_id"]) for r in database.get_face_encodings()}
+    for m in members:
+        m["known"] = str(m["discord_id"]) in known
+        m["enrolled"] = str(m["discord_id"]) in enrolled
+    return {"available": True, "members": members, "detail": None}
+
+
 @router.post("/api/enroll")
 def enroll(req: EnrollRequest, request: Request):
     """Add a new member and their face, with no password.
@@ -384,12 +417,24 @@ def enroll(req: EnrollRequest, request: Request):
     name = req.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="A name is required")
-    taken = any(u["username"].strip().lower() == name.lower()
-                for u in database.get_all_users())
-    if taken:
-        raise HTTPException(
-            status_code=409,
-            detail=f"{name} is already enrolled — check in instead.")
+
+    discord_id = (req.discord_id or "").strip()
+    if discord_id:
+        # Re-enrolling a known account is fine: it adds face samples.
+        if database.get_face_encodings():
+            already = any(str(r["discord_id"]) == discord_id
+                          for r in database.get_face_encodings())
+            if already:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"{name} is already enrolled — check in instead.")
+    else:
+        taken = any(u["username"].strip().lower() == name.lower()
+                    for u in database.get_all_users())
+        if taken:
+            raise HTTPException(
+                status_code=409,
+                detail=f"{name} is already enrolled — check in instead.")
 
     embeddings = []
     last_detail = "No usable face in any of those frames."
@@ -402,13 +447,16 @@ def enroll(req: EnrollRequest, request: Request):
     if not embeddings:
         raise HTTPException(status_code=422, detail=last_detail)
 
-    discord_id = "web:" + secrets.token_hex(8)
+    if not discord_id:
+        discord_id = "web:" + secrets.token_hex(8)
     database.get_or_create_user(discord_id, name)
+    database.update_username(discord_id, name)
     for embedding in embeddings:
         database.save_face_encoding(discord_id, name, json.dumps(embedding))
     print(f"🌐 Web enrolment: {name} ({discord_id}), {len(embeddings)} samples")
     return {"status": "enrolled", "name": name, "discord_id": discord_id,
-            "samples": len(embeddings)}
+            "samples": len(embeddings),
+            "linked_to_discord": not discord_id.startswith("web:")}
 
 
 @router.post("/api/face-login")
@@ -440,6 +488,41 @@ class CheckinRequest(BaseModel):
     photo_b64: str | None = Field(default=None, max_length=8_000_000)
 
 
+def _thumbnail(photo: bytes, width: int = 220) -> bytes:
+    """Shrink a check-in photo for the timeline. Falls back to the original."""
+    try:
+        import cv2
+        import numpy as np
+        frame = cv2.imdecode(np.frombuffer(photo, np.uint8), cv2.IMREAD_COLOR)
+        if frame is None:
+            return photo
+        h, w = frame.shape[:2]
+        if w > width:
+            frame = cv2.resize(frame, (width, max(1, round(h * width / w))),
+                               interpolation=cv2.INTER_AREA)
+        ok, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+        return buf.tobytes() if ok else photo
+    except Exception:
+        return photo   # OpenCV missing or unhappy: keep the full frame
+
+
+def _record_event(discord_id: str, name: str, action: str, result: dict,
+                  photo_b64: str | None = None):
+    """Add this check-in/out to the lab timeline. Never fatal."""
+    try:
+        thumb = None
+        if photo_b64:
+            thumb = _thumbnail(base64.b64decode(photo_b64, validate=True))
+        database.add_checkin_event(
+            discord_id, name, action,
+            credits=int(result.get("credits_earned") or 0),
+            bonuses=json.dumps(result.get("bonuses", [])),
+            photo=thumb,
+        )
+    except Exception as e:
+        print(f"⚠️ Could not record timeline event: {e}")
+
+
 def _queue_photo(discord_id: str, name: str, photo_b64: str, result: dict):
     """Save a check-in photo for the bot to post. Never fatal to the check-in."""
     try:
@@ -464,9 +547,11 @@ def checkin(req: CheckinRequest | None = None,
     discord_id, name = require_person(session)
     result = checkin_logic.perform_checkin(discord_id, name, source="web")
     print(f"🌐 Web check-in: {name} -> {result['status']}")
-    if (result["status"] == "checked_in" and req and req.photo_b64
-            and config.KIOSK_POST_PHOTOS):
-        result["photo_queued"] = _queue_photo(discord_id, name, req.photo_b64, result)
+    photo_b64 = req.photo_b64 if req else None
+    if result["status"] == "checked_in":
+        _record_event(discord_id, name, "in", result, photo_b64)
+        if photo_b64 and config.KIOSK_POST_PHOTOS:
+            result["photo_queued"] = _queue_photo(discord_id, name, photo_b64, result)
     return result
 
 
@@ -476,10 +561,47 @@ def checkout(creditbot_session: str | None = Cookie(default=None)):
     discord_id, name = require_person(session)
     result = checkin_logic.perform_checkout(discord_id)
     print(f"🌐 Web check-out: {name} -> {result['status']}")
+    if result["status"] == "checked_out":
+        _record_event(discord_id, name, "out", result)
     return result
 
 
 # ----------------------------------------------------------------- views
+
+@router.get("/api/timeline")
+def timeline(limit: int = 12,
+             creditbot_session: str | None = Cookie(default=None)):
+    """Who has come and gone lately, newest first."""
+    require_session(creditbot_session)
+    events = []
+    for row in database.get_checkin_events(max(1, min(limit, 50))):
+        try:
+            bonuses = json.loads(row["bonuses"] or "[]")
+        except ValueError:
+            bonuses = []
+        events.append({
+            "id": row["id"],
+            "name": row["username"],
+            "action": row["action"],
+            "credits": row["credits"],
+            "bonuses": bonuses,
+            "at": row["created_at"],
+            "has_photo": bool(row["has_photo"]),
+        })
+    return {"events": events}
+
+
+@router.get("/api/timeline/{event_id}/photo", include_in_schema=False)
+def timeline_photo(event_id: int,
+                   creditbot_session: str | None = Cookie(default=None)):
+    require_session(creditbot_session)
+    photo = database.get_checkin_event_photo(event_id)
+    if not photo:
+        raise HTTPException(status_code=404, detail="No photo for that moment")
+    # These never change once written, so let the browser keep them.
+    return Response(content=photo, media_type="image/jpeg",
+                    headers={"Cache-Control": "private, max-age=86400"})
+
 
 @router.get("/api/whos-in")
 def whos_in(creditbot_session: str | None = Cookie(default=None)):

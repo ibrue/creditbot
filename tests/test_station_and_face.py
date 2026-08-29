@@ -443,3 +443,113 @@ def test_face_scan_endpoint_forwards_detect_only(web, db, monkeypatch):
     web.post("/app/api/login", json={"password": PASSWORD})
     web.post("/app/api/face-scan", json={"image_b64": FRAME, "detect_only": True})
     assert seen["detect_only"] is True
+
+
+# ------------------------------------------------------ the lab timeline
+# The kiosk's main screen shows who came and went, with the face the
+# System saw. The thumbnail lives in the database because the bot deletes
+# the full photo from disk once it has posted it to Discord.
+
+def test_a_checkin_lands_on_the_timeline_with_its_photo(web, db):
+    database.get_or_create_user("42", "alice")
+    web.post("/app/api/login", json={"password": PASSWORD})
+    web.post("/app/api/select", json={"discord_id": "42"})
+    web.post("/app/api/checkin", json={"photo_b64": FRAME})
+
+    events = web.get("/app/api/timeline").json()["events"]
+    assert len(events) == 1
+    assert events[0]["name"] == "alice"
+    assert events[0]["action"] == "in"
+    assert events[0]["has_photo"] is True
+
+    photo = web.get(f"/app/api/timeline/{events[0]['id']}/photo")
+    assert photo.status_code == 200
+    assert photo.headers["content-type"] == "image/jpeg"
+    assert photo.content
+
+
+def test_a_checkout_lands_on_the_timeline_without_one(web, db):
+    database.get_or_create_user("42", "alice")
+    web.post("/app/api/login", json={"password": PASSWORD})
+    web.post("/app/api/select", json={"discord_id": "42"})
+    web.post("/app/api/checkin", json={})
+    web.post("/app/api/checkout")
+
+    events = web.get("/app/api/timeline").json()["events"]
+    assert [e["action"] for e in events] == ["out", "in"]   # newest first
+    assert events[0]["has_photo"] is False
+
+
+def test_the_timeline_needs_a_session(web, db):
+    web.cookies.clear()
+    assert web.get("/app/api/timeline").status_code == 401
+    assert web.get("/app/api/timeline/1/photo").status_code == 401
+
+
+def test_the_timeline_does_not_grow_without_bound(db):
+    for i in range(70):
+        database.add_checkin_event("42", "alice", "in", keep=60)
+    assert len(database.get_checkin_events(limit=50)) == 50
+    # Only the most recent 60 are retained overall.
+    conn = database.get_connection()
+    total = conn.execute("select count(*) from checkin_events").fetchone()[0]
+    conn.close()
+    assert total == 60
+
+
+# --------------------------------------------- picking a Discord account
+# Enrolment attaches the face to a real Discord id, so credits earned at
+# the kiosk meet the ones earned on Discord.
+
+def test_members_reports_when_discord_is_not_hooked_up(web, db, monkeypatch):
+    monkeypatch.setattr(webapp.discord_lookup, "available", lambda: False)
+    body = web.get("/app/api/discord/members").json()
+    assert body["available"] is False
+    assert body["members"] == []
+    assert body["detail"]                      # a reason worth showing
+
+
+def test_members_reports_a_revoked_token_rather_than_failing(web, db, monkeypatch):
+    monkeypatch.setattr(webapp.discord_lookup, "available", lambda: True)
+
+    def boom(*_a, **_k):
+        raise webapp.discord_lookup.DiscordUnavailable("token revoked")
+    monkeypatch.setattr(webapp.discord_lookup, "list_members", boom)
+
+    body = web.get("/app/api/discord/members").json()
+    assert body["available"] is False
+    assert "revoked" in body["detail"]
+
+
+def test_members_is_refused_over_funnel(web, db):
+    assert web.get("/app/api/discord/members", headers=FUNNEL).status_code == 403
+
+
+def test_enrolling_binds_the_face_to_the_discord_account(web, db, faces):
+    response = web.post("/app/api/enroll", json={
+        "name": "Alice A", "discord_id": "1234567890", "samples": [FRAME],
+    })
+    assert response.status_code == 200
+    body = response.json()
+    assert body["discord_id"] == "1234567890"
+    assert body["linked_to_discord"] is True
+
+    # The face is filed against the real account, not an invented one.
+    assert all(r["discord_id"] == "1234567890"
+               for r in database.get_face_encodings())
+    assert database.get_user("1234567890")["username"] == "Alice A"
+
+
+def test_enrolling_without_discord_still_works_but_says_so(web, db, faces):
+    body = web.post("/app/api/enroll",
+                    json={"name": "Bob", "samples": [FRAME]}).json()
+    assert body["linked_to_discord"] is False
+    assert body["discord_id"].startswith("web:")
+
+
+def test_the_same_discord_account_cannot_enroll_twice(web, db, faces):
+    web.post("/app/api/enroll",
+             json={"name": "Alice", "discord_id": "999", "samples": [FRAME]})
+    again = web.post("/app/api/enroll",
+                     json={"name": "Alice", "discord_id": "999", "samples": [FRAME]})
+    assert again.status_code == 409

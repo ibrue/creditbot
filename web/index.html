@@ -129,6 +129,44 @@
   .cam .flash.fire { animation: flash .45s ease-out; }
   @keyframes flash { 0% { opacity: .85; } 100% { opacity: 0; } }
 
+  /* Comings and goings, with the face the System saw. */
+  .timeline li { align-items: center; gap: 12px; }
+  .timeline img, .timeline .noshot {
+    width: 44px; height: 44px; border-radius: 8px; object-fit: cover;
+    border: 1px solid var(--line); flex: 0 0 auto; background: var(--panel-2);
+  }
+  .timeline .noshot { display: grid; place-items: center; color: var(--dim);
+                      font-family: var(--mono); font-size: .9rem; }
+  .timeline .tl-who { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .timeline .tl-text { min-width: 0; }
+  .timeline .tl-name { display: block; font-weight: 600; }
+  .timeline .tl-sub { display: block; color: var(--dim); font-size: .8rem;
+                      font-family: var(--mono); }
+  .timeline .in  { color: var(--ok); }
+  .timeline .out { color: var(--dim); }
+
+  /* Who you are registering as. */
+  .idcard { display: flex; align-items: center; gap: 14px; padding: 12px 14px;
+            border: 1px solid var(--line); border-radius: var(--r);
+            background: var(--panel-2); }
+  .idcard img, .idcard .initials {
+    width: 52px; height: 52px; border-radius: 50%; flex: 0 0 auto;
+    border: 1px solid var(--line); object-fit: cover; background: var(--panel);
+  }
+  .idcard .initials { display: grid; place-items: center; font-family: var(--mono);
+                      font-weight: 700; color: var(--accent); }
+  .idcard b { display: block; font-size: 1.05rem; }
+  .idcard span { display: block; color: var(--dim); font-family: var(--mono);
+                 font-size: .78rem; }
+  .idcard .tag { color: var(--ok); }
+  .hint { color: var(--dim); font-size: .82rem; margin: 10px 0 0; }
+  #e-results li button { display: flex; align-items: center; gap: 10px; width: 100%; }
+  #e-results img, #e-results .initials {
+    width: 28px; height: 28px; border-radius: 50%; object-fit: cover;
+    border: 1px solid var(--line); background: var(--panel);
+    display: grid; place-items: center; font-size: .7rem; flex: 0 0 auto;
+  }
+
   /* How the System reads a face — shown live under the camera. */
   .diag { margin-top: 12px; font-family: var(--mono); font-size: .72rem;
           border-top: 1px solid var(--line); padding-top: 10px; }
@@ -310,21 +348,59 @@
 
   <!-- ---------------- Enrol (no password, lab network only) ---------------- -->
   <section id="enroll-view" class="hidden">
-    <h1>Become a <span class="hl">citizen.</span></h1>
-    <p class="sub" id="enroll-sub">Type your name, then look at the camera.</p>
 
-    <div id="enroll-msg" class="msg" style="margin-top:16px"></div>
+    <!-- step 1: who are you on Discord? -->
+    <div id="e-who">
+      <h1>Become a <span class="hl">citizen.</span></h1>
+      <p class="sub">Pick your Discord account, so your credits land in the right place.</p>
+      <div id="enroll-msg" class="msg" style="margin-top:16px"></div>
 
-    <div class="block" style="margin-top:16px">
-      <div class="block-head">Registration <small>the System welcomes you</small></div>
-      <div class="block-body">
-        <label for="enroll-name">Your name</label>
-        <input id="enroll-name" type="text" maxlength="100" autocomplete="off"
-               placeholder="How the leaderboard will know you">
-        <div id="enroll-face-slot" style="margin-top:14px"></div>
-        <button id="enroll-start" style="margin-top:16px">Begin registration</button>
-        <button class="ghost hidden" id="enroll-back" style="margin-top:10px">Back</button>
+      <div class="block" style="margin-top:16px">
+        <div class="block-head">Your Discord account <small>the System cross-references</small></div>
+        <div class="block-body">
+          <label for="e-search">Search the server</label>
+          <input id="e-search" type="search" placeholder="Start typing your name…" autocomplete="off">
+          <ul id="e-results" style="margin-top:12px"></ul>
+          <p id="e-discord-note" class="hint hidden"></p>
+          <button class="ghost" id="e-use-name" style="margin-top:12px">Not on Discord? Use a name instead</button>
+          <div id="e-name-box" class="hidden" style="margin-top:12px">
+            <label for="enroll-name">Your name</label>
+            <input id="enroll-name" type="text" maxlength="100" autocomplete="off"
+                   placeholder="How the leaderboard will know you">
+            <button id="e-name-go" style="margin-top:12px">Use this name</button>
+          </div>
+        </div>
       </div>
+      <button class="ghost hidden" id="enroll-back">Back</button>
+    </div>
+
+    <!-- step 2: look at the camera -->
+    <div id="e-capture" class="hidden">
+      <h1>Hold <span class="hl">still.</span></h1>
+      <p class="sub" id="enroll-sub">The System is learning your face.</p>
+      <div id="e-capture-msg" class="msg" style="margin-top:16px"></div>
+
+      <div class="idcard" id="e-chosen"></div>
+      <div id="enroll-face-slot" style="margin-top:14px"></div>
+      <div class="row" style="margin-top:14px">
+        <button id="enroll-start">Begin registration</button>
+        <button class="ghost" id="e-change">Change account</button>
+      </div>
+    </div>
+
+    <!-- step 3: you are on the books -->
+    <div id="e-done" class="hidden">
+      <h1>Registered<span class="hl">.</span></h1>
+      <p class="sub">The System has you on file.</p>
+      <div class="block" style="margin-top:16px">
+        <div class="block-head">Citizen record <small>welcome to the collective</small></div>
+        <div class="block-body">
+          <div class="idcard" id="e-done-card"></div>
+          <ul id="e-done-facts" style="margin-top:14px"></ul>
+        </div>
+      </div>
+      <button id="e-done-go" style="margin-top:16px">Check in now</button>
+      <button class="ghost" id="e-done-idle" style="margin-top:10px">Back to the terminal</button>
     </div>
 
     <div class="footnote"><span>creditbot · the System sees all</span></div>
@@ -349,6 +425,11 @@
       <div class="block">
         <div class="block-head">Observed in the lab <small>presence verified</small></div>
         <div class="block-body"><ul id="k-whos-in"></ul></div>
+      </div>
+
+      <div class="block">
+        <div class="block-head">Comings and goings <small>the System keeps the receipts</small></div>
+        <div class="block-body"><ul id="k-timeline" class="timeline"></ul></div>
       </div>
 
       <div class="block">
@@ -1078,11 +1159,66 @@ async function kioskComplete(name, frameB64) {
   kioskTimer = setTimeout(() => kioskIdle(), RESULT_HOLD_MS);
 }
 
+function shortTime(stamp) {
+  // "2026-08-29 16:44:17" -> "16:44". Parsed by hand: it is local already.
+  const m = /(\d{2}):(\d{2})/.exec(stamp || "");
+  return m ? `${m[1]}:${m[2]}` : "";
+}
+
+function renderTimeline(events) {
+  const list = $("k-timeline");
+  list.innerHTML = "";
+  if (!events.length) {
+    list.innerHTML = '<li class="empty">Nothing yet today. The System waits.</li>';
+    return;
+  }
+  for (const e of events) {
+    const li = document.createElement("li");
+    const who = document.createElement("span");
+    who.className = "tl-who";
+
+    if (e.has_photo) {
+      const img = document.createElement("img");
+      img.src = `/app/api/timeline/${e.id}/photo`;
+      img.alt = e.name;
+      img.loading = "lazy";
+      who.append(img);
+    } else {
+      const ph = document.createElement("span");
+      ph.className = "noshot";
+      ph.textContent = (e.name || "?").trim().charAt(0).toUpperCase();
+      who.append(ph);
+    }
+
+    const text = document.createElement("span");
+    text.className = "tl-text";
+    const name = document.createElement("b");
+    name.className = "tl-name";
+    name.textContent = e.name;
+    const sub = document.createElement("span");
+    sub.className = "tl-sub";
+    const verb = e.action === "out" ? "checked out" : "checked in";
+    const bonus = (e.bonuses || []).length ? " · " + e.bonuses.join(" · ") : "";
+    sub.innerHTML = `<span class="${e.action === "out" ? "out" : "in"}">${verb}</span> `
+                  + `${shortTime(e.at)}${bonus}`;
+    text.append(name, sub);
+    who.append(text);
+
+    const meta = document.createElement("span");
+    meta.className = "meta";
+    meta.textContent = e.credits ? `+${e.credits}` : "";
+    li.append(who, meta);
+    list.append(li);
+  }
+}
+
 async function loadKioskLists() {
-  const [inLab, boards] = await Promise.all([
+  const [inLab, boards, tl] = await Promise.all([
     api("/whos-in").catch(() => ({ checked_in: [] })),
     api("/leaderboard").catch(() => ({ weekly: [] })),
+    api("/timeline?limit=8").catch(() => ({ events: [] })),
   ]);
+  renderTimeline(tl.events || []);
   const inList = $("k-whos-in");
   inList.innerHTML = "";
   if (!inLab.checked_in.length) {
@@ -1151,12 +1287,140 @@ $("enroll-back").addEventListener("click", () => {
 });
 
 // ---------- enrolment (no password; the server limits it to the lab) ----------
+// Three steps: say who you are on Discord, let the camera learn your face,
+// then a receipt that names the account the face was attached to.
 const ENROLL_SAMPLES = 5;
 const ENROLL_GAP_MS = 700;
 const ENROLL_FIND_MS = 8000;   // per sample: how long to wait for a face
 let enrollBusy = false;
 let faceStatusText = "";
+let enrollWho = null;          // {discord_id, display_name, username, avatar_url}
 
+const ePanels = ["e-who", "e-capture", "e-done"];
+function eShow(name) {
+  for (const id of ePanels) $(id).classList.toggle("hidden", id !== name);
+}
+
+function avatarNode(person, cls) {
+  if (person.avatar_url) {
+    const img = document.createElement("img");
+    img.src = person.avatar_url;
+    img.alt = person.display_name || person.name || "";
+    return img;
+  }
+  const span = document.createElement("span");
+  span.className = cls;
+  span.textContent = (person.display_name || person.name || "?").trim().charAt(0).toUpperCase();
+  return span;
+}
+
+function idCard(el, person) {
+  el.innerHTML = "";
+  el.append(avatarNode(person, "initials"));
+  const text = document.createElement("div");
+  const name = document.createElement("b");
+  name.textContent = person.display_name || person.name;
+  const sub = document.createElement("span");
+  sub.textContent = person.discord_id && !String(person.discord_id).startsWith("web:")
+    ? "@" + (person.username || person.display_name)
+    : "local name only — not linked to Discord";
+  text.append(name, sub);
+  if (person.discord_id && !String(person.discord_id).startsWith("web:")) {
+    const tag = document.createElement("span");
+    tag.className = "tag";
+    tag.textContent = "linked to Discord";
+    text.append(tag);
+  }
+  el.append(text);
+}
+
+// ---- step 1: pick the Discord account ----
+let discordMembers = [];
+
+async function loadDiscordMembers(q = "") {
+  const list = $("e-results");
+  const note = $("e-discord-note");
+  try {
+    const r = await api("/discord/members" + (q ? "?q=" + encodeURIComponent(q) : ""));
+    if (!r.available) {
+      list.innerHTML = "";
+      note.textContent = r.detail + " Use a name instead — an admin can link it to Discord later.";
+      note.classList.remove("hidden");
+      $("e-name-box").classList.remove("hidden");
+      return;
+    }
+    note.classList.add("hidden");
+    discordMembers = r.members || [];
+    renderDiscordMembers();
+  } catch (err) {
+    list.innerHTML = "";
+    note.textContent = err.message;
+    note.classList.remove("hidden");
+    $("e-name-box").classList.remove("hidden");
+  }
+}
+
+function renderDiscordMembers() {
+  const list = $("e-results");
+  list.innerHTML = "";
+  if (!discordMembers.length) {
+    list.innerHTML = '<li class="empty">Nobody by that name in the server.</li>';
+    return;
+  }
+  for (const m of discordMembers.slice(0, 25)) {
+    const li = document.createElement("li");
+    const btn = document.createElement("button");
+    btn.className = "ghost";
+    btn.append(avatarNode(m, "initials"));
+    const label = document.createElement("span");
+    label.textContent = m.display_name + (m.enrolled ? "  (already enrolled)" : "");
+    btn.append(label);
+    btn.addEventListener("click", () => chooseIdentity(m));
+    li.append(btn);
+    list.append(li);
+  }
+}
+
+async function chooseIdentity(person) {
+  enrollWho = person;
+  idCard($("e-chosen"), person);
+  say($("e-capture-msg"), "");
+  $("enroll-sub").textContent = "The System is learning your face.";
+  eShow("e-capture");
+  faceHome("enroll");
+  await startFace({ identify: false });
+}
+
+let searchTimer = null;
+$("e-search").addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => loadDiscordMembers($("e-search").value.trim()), 250);
+});
+$("e-use-name").addEventListener("click", () => {
+  $("e-name-box").classList.toggle("hidden");
+  $("enroll-name").focus();
+});
+$("e-name-go").addEventListener("click", () => {
+  const name = $("enroll-name").value.trim();
+  if (!name) { say($("enroll-msg"), "The System requires a name.", "err"); return; }
+  chooseIdentity({ display_name: name, name, discord_id: null, avatar_url: null });
+});
+$("e-change").addEventListener("click", async () => {
+  stopFace();
+  enrollWho = null;
+  eShow("e-who");
+});
+
+async function startEnroll() {
+  show("enroll");
+  enrollWho = null;
+  say($("enroll-msg"), "");
+  $("e-search").value = "";
+  eShow("e-who");
+  await loadDiscordMembers();
+}
+
+// ---- step 2: capture ----
 // Only keep a frame the detector can actually find a face in — capturing
 // blind on a timer produces samples the server then rejects.
 async function captureFaceSample(index) {
@@ -1186,30 +1450,17 @@ async function captureFaceSample(index) {
   return null;
 }
 
-async function startEnroll() {
-  show("enroll");
-  $("enroll-sub").textContent = "Type your name, then look at the camera.";
-  faceHome("enroll");
-  await startFace({ identify: false });   // locate the face, do not match it
-}
-
 $("enroll-start").addEventListener("click", async () => {
-  if (enrollBusy) return;
-  const name = $("enroll-name").value.trim();
-  if (!name) {
-    say($("enroll-msg"), "The System requires a name.", "err");
-    $("enroll-name").focus();
-    return;
-  }
+  if (enrollBusy || !enrollWho) return;
   if (!faceStream) {
-    say($("enroll-msg"), "No camera — registration needs one.", "err");
+    say($("e-capture-msg"), "No camera — registration needs one.", "err");
     return;
   }
 
   enrollBusy = true;
   $("enroll-start").disabled = true;
-  $("enroll-name").disabled = true;
-  say($("enroll-msg"), "");
+  $("e-change").disabled = true;
+  say($("e-capture-msg"), "");
 
   const samples = [];
   try {
@@ -1225,22 +1476,55 @@ $("enroll-start").addEventListener("click", async () => {
                       + "get closer, and make sure the room is lit.");
     }
 
-    const result = await api("/enroll", { method: "POST", body: JSON.stringify({ name, samples }) });
+    const result = await api("/enroll", {
+      method: "POST",
+      body: JSON.stringify({
+        name: enrollWho.display_name || enrollWho.name,
+        discord_id: enrollWho.discord_id || null,
+        samples,
+      }),
+    });
     stopFace();
-    $("enroll-sub").textContent = "Registration complete.";
-    say($("enroll-msg"),
-        `Welcome, ${result.name}. ${result.samples} samples on file — you can now check in at the terminal.`,
-        "ok");
-    $("enroll-name").value = "";
+
+    // ---- step 3: the receipt ----
+    idCard($("e-done-card"), {
+      display_name: result.name,
+      username: enrollWho.username,
+      discord_id: result.discord_id,
+      avatar_url: enrollWho.avatar_url,
+    });
+    const facts = $("e-done-facts");
+    facts.innerHTML = "";
+    for (const [label, value] of [
+      ["Face samples on file", String(result.samples)],
+      ["Discord account", result.linked_to_discord
+        ? "@" + (enrollWho.username || result.name)
+        : "not linked — credits stay local"],
+      ["Identifier", result.discord_id],
+    ]) {
+      const li = document.createElement("li");
+      const k = document.createElement("span"); k.textContent = label;
+      const v = document.createElement("span"); v.className = "meta"; v.textContent = value;
+      li.append(k, v);
+      facts.append(li);
+    }
+    eShow("e-done");
   } catch (err) {
-    say($("enroll-msg"), err.message, "err");
-    $("enroll-sub").textContent = "Type your name, then look at the camera.";
+    say($("e-capture-msg"), err.message, "err");
+    $("enroll-sub").textContent = "The System is learning your face.";
   } finally {
     enrollBusy = false;
     faceStatusText = "";
     $("enroll-start").disabled = false;
-    $("enroll-name").disabled = false;
+    $("e-change").disabled = false;
   }
+});
+
+$("e-done-go").addEventListener("click", () => {
+  if (KIOSK) kioskBegin("/checkin"); else show("login");
+});
+$("e-done-idle").addEventListener("click", () => {
+  if (KIOSK) kioskIdle(); else show("login");
 });
 
 // ---------- main ----------
