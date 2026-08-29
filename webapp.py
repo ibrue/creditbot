@@ -12,16 +12,19 @@ Config (environment):
   WEB_TRUST_PROXY 1 only when a reverse proxy you control sets
                   X-Forwarded-For; otherwise the header is ignored
 
-Two login pages are served:
-  /app          multi-user — after the password, people sign in with face
-                recognition (if the server has the models) or by picking
-                their name.
+The deployment is a walk-up terminal, not a personal app:
+  /app          the terminal. The lab password arms it once, then each
+  /app/kiosk    press of Check in / Check out identifies the person in
+                front of the camera and credits them, returning to idle.
+                Both paths serve the same screen.
+  /app/enroll   registration — no password, and refused over Tailscale
+                Funnel so it stays a lab-network door.
   /app/station  retired; redirects to /app/kiosk. It credited one shared
                 account for everyone at the lab computer.
-  /app/kiosk    walk-up terminal — the password arms the machine, then
-                each press of Check in / Check out identifies the person
-                in front of the camera and credits them, returning to
-                idle afterwards.
+
+The per-person dashboard that used to live at /app was removed: on a
+shared terminal it was the wrong shape, and its Sign out button de-armed
+the machine for whoever came next.
 """
 import base64
 import json
