@@ -129,6 +129,30 @@
   .cam .flash.fire { animation: flash .45s ease-out; }
   @keyframes flash { 0% { opacity: .85; } 100% { opacity: 0; } }
 
+  /* How the System reads a face — shown live under the camera. */
+  .diag { margin-top: 12px; font-family: var(--mono); font-size: .72rem;
+          border-top: 1px solid var(--line); padding-top: 10px; }
+  .diag-stages { display: flex; align-items: center; gap: 6px; color: var(--dim);
+                 letter-spacing: .06em; margin-bottom: 10px; }
+  .diag-stages i { font-style: normal; opacity: .35; }
+  .diag-stages span { padding: 2px 6px; border: 1px solid transparent; border-radius: 4px; }
+  .diag-stages span.on { color: var(--accent); border-color: var(--accent); }
+  .diag-stages span.done { color: var(--ok); }
+  .diag-row { display: grid; grid-template-columns: 8.5rem 1fr 4.5rem;
+              align-items: center; gap: 10px; margin-bottom: 6px; color: var(--dim); }
+  .diag-row b { color: var(--fg); font-weight: 600; text-align: right; }
+  .diag-row b.bad { color: var(--warn); }
+  .diag-row b.good { color: var(--ok); }
+  .diag-bar { position: relative; height: 6px; background: var(--panel-2);
+              border-radius: 3px; overflow: hidden; display: block; }
+  .diag-bar i { position: absolute; inset: 0 auto 0 0; width: 0;
+                background: var(--accent); transition: width .12s linear; }
+  .diag-bar i.good { background: var(--ok); }
+  .diag-bar u { position: absolute; top: -2px; bottom: -2px; width: 2px;
+                background: var(--fg); opacity: .55; }
+  .diag-foot { display: flex; justify-content: space-between; color: var(--dim);
+               margin-top: 8px; opacity: .7; }
+
   /* The captured still flies off toward Discord. */
   .shot { position: fixed; z-index: 50; border-radius: 8px;
           border: 2px solid var(--ok); box-shadow: 0 10px 40px #000a;
@@ -253,6 +277,24 @@
         </div>
         <p id="face-status">Acquiring camera…</p>
         <div class="sendbar hidden" id="sendbar"><span class="dot"></span><span id="sendbar-text"></span></div>
+
+        <div id="diag" class="diag hidden">
+          <div class="diag-stages">
+            <span data-stage="detect">detect</span><i>→</i>
+            <span data-stage="align">align</span><i>→</i>
+            <span data-stage="embed">embed</span><i>→</i>
+            <span data-stage="match">match</span>
+          </div>
+          <div class="diag-row"><span>Detector confidence</span>
+            <span class="diag-bar"><i id="d-conf-bar"></i></span><b id="d-conf">—</b></div>
+          <div class="diag-row"><span>Face size</span>
+            <span class="diag-bar"><i id="d-size-bar"></i></span><b id="d-size">—</b></div>
+          <div class="diag-row"><span>Head turn</span>
+            <span class="diag-bar"><i id="d-yaw-bar"></i></span><b id="d-yaw">—</b></div>
+          <div class="diag-row"><span>Match score</span>
+            <span class="diag-bar"><i id="d-match-bar"></i><u id="d-thresh"></u></span><b id="d-match">—</b></div>
+          <div class="diag-foot"><span id="d-zoom">zoom 1.0×</span><span id="d-rate">— ms</span></div>
+        </div>
       </div>
     </div>
     <div class="block">
@@ -281,6 +323,7 @@
                placeholder="How the leaderboard will know you">
         <div id="enroll-face-slot" style="margin-top:14px"></div>
         <button id="enroll-start" style="margin-top:16px">Begin registration</button>
+        <button class="ghost hidden" id="enroll-back" style="margin-top:10px">Back</button>
       </div>
     </div>
 
@@ -289,37 +332,67 @@
 
   <!-- ---------------- Kiosk (walk-up terminal) ---------------- -->
   <section id="kiosk-view" class="hidden">
-    <h1>The lab is <span class="hl">watching.</span></h1>
-    <p class="sub" id="kiosk-sub">Press a button, then look at the camera.</p>
 
-    <div id="kiosk-msg" class="msg" style="margin-top:16px"></div>
+    <!-- idle -->
+    <div id="k-idle">
+      <h1>The lab is <span class="hl">watching.</span></h1>
+      <p class="sub">Press a button, then look at the camera.</p>
 
-    <div class="row" id="kiosk-buttons" style="margin:18px 0 22px">
-      <button class="big checkin" id="k-checkin">Check in</button>
-      <button class="big checkout" id="k-checkout">Check out</button>
-    </div>
+      <div id="kiosk-msg" class="msg" style="margin-top:16px"></div>
 
-    <div id="kiosk-scan" class="hidden" style="margin-bottom:22px">
-      <div id="kiosk-face-slot"></div>
-      <div class="row" style="margin-top:12px">
-        <button class="ghost" id="k-manual">Pick your name</button>
-        <button class="ghost" id="k-cancel">Cancel</button>
+      <div class="row" style="margin:18px 0 12px">
+        <button class="big checkin" id="k-checkin">Check in</button>
+        <button class="big checkout" id="k-checkout">Check out</button>
+      </div>
+      <button class="ghost" id="k-register" style="margin-bottom:22px">New here? Register</button>
+
+      <div class="block">
+        <div class="block-head">Observed in the lab <small>presence verified</small></div>
+        <div class="block-body"><ul id="k-whos-in"></ul></div>
+      </div>
+
+      <div class="block">
+        <div class="block-head">Most loyal citizens <small>the Supreme Leader is crowned weekly</small></div>
+        <div class="block-body"><ul id="k-board"></ul></div>
       </div>
     </div>
 
-    <div class="block">
-      <div class="block-head">Observed in the lab <small>presence verified</small></div>
-      <div class="block-body"><ul id="k-whos-in"></ul></div>
+    <!-- identify by face -->
+    <div id="k-scan" class="hidden">
+      <h1 id="k-scan-title">Checking <span class="hl">in.</span></h1>
+      <p class="sub">Look at the camera. The System is reading your face.</p>
+      <div id="kiosk-face-slot" style="margin-top:16px"></div>
+      <div class="row" style="margin-top:14px">
+        <button class="ghost" id="k-manual">Pick from list</button>
+        <button class="ghost" id="k-back-scan">Back</button>
+      </div>
     </div>
 
-    <div class="block">
-      <div class="block-head">Most loyal citizens <small>the Supreme Leader is crowned weekly</small></div>
-      <div class="block-body"><ul id="k-board"></ul></div>
+    <!-- identify by name (the kiosk's own picker: no sign out) -->
+    <div id="k-pick" class="hidden">
+      <h1 id="k-pick-title">Who is checking <span class="hl">in?</span></h1>
+      <p class="sub">Find your name, or keep looking at the camera.</p>
+      <div id="k-pick-face-slot" style="margin-top:16px"></div>
+      <div class="block" style="margin-top:16px">
+        <div class="block-head">Citizens on record <small>the System keeps a list</small></div>
+        <div class="block-body">
+          <label for="k-filter">Search</label>
+          <input id="k-filter" type="search" placeholder="Start typing a name…" autocomplete="off">
+          <ul id="k-member-list" style="margin-top:12px"></ul>
+        </div>
+      </div>
+      <div class="row" style="margin-top:14px">
+        <button class="ghost" id="k-pick-register">Not on the list? Register</button>
+        <button class="ghost" id="k-back-pick">Back</button>
+      </div>
     </div>
 
     <div class="footnote">
       <span>creditbot · the System sees all</span>
-      <a class="quiet" href="admin">Admin</a>
+      <span>
+        <a class="quiet" href="admin">Admin</a>
+        <a class="quiet" id="k-endsession" href="#" style="margin-left:14px">End session</a>
+      </span>
     </div>
   </section>
 
@@ -389,14 +462,6 @@ const views = { login: $("login-view"), pick: $("pick-view"), app: $("app-view")
 
 // The same page serves /app (multi-user) and /app/station (the shared
 // desktop): station mode signs straight in as the station account.
-const STATION = /\/station\/?$/.test(location.pathname);
-if (STATION) {
-  document.title = "Lab Station";
-  $("sys-name").innerHTML = "CREDITBOT<em>*</em> STATION TERMINAL";
-  document.querySelector("#login-view .sub").textContent =
-    "This terminal reports as the shared lab account.";
-}
-
 // /app/kiosk is the walk-up terminal: the password arms the machine, then
 // every action identifies the person in front of the camera and credits
 // them, returning to idle so nobody inherits the previous person's session.
@@ -421,8 +486,14 @@ if (KIOSK) {
 // The camera card is shared between the picker and the kiosk; park it in
 // whichever slot is on screen so there is only ever one <video> element.
 function faceHome(where) {
-  const slot = { kiosk: "kiosk-face-slot", enroll: "enroll-face-slot" }[where] || "pick-face-slot";
-  $(slot).append($("face-card"));
+  const slot = { kiosk: "kiosk-face-slot", kpick: "k-pick-face-slot",
+                 enroll: "enroll-face-slot" }[where] || "pick-face-slot";
+  const card = $("face-card");
+  if (card.parentElement === $(slot)) return;
+  $(slot).append(card);
+  // Re-parenting a <video> pauses it in some browsers; keep the feed alive.
+  const video = $("face-video");
+  if (video.srcObject && video.paused) video.play().catch(() => {});
 }
 faceHome("pick");
 
@@ -463,7 +534,7 @@ $("login-form").addEventListener("submit", async (e) => {
   btn.disabled = true;
   say($("login-msg"), "");
   try {
-    await api("/login", { method: "POST", body: JSON.stringify({ password: $("password").value, station: STATION }) });
+    await api("/login", { method: "POST", body: JSON.stringify({ password: $("password").value }) });
     $("password").value = "";
     await refresh();
   } catch (err) {
@@ -497,13 +568,6 @@ function renderMembers() {
 async function choose(discord_id) {
   try {
     await api("/select", { method: "POST", body: JSON.stringify({ discord_id }) });
-    if (KIOSK && kioskAction) {
-      const picked = members.find((m) => String(m.discord_id) === String(discord_id));
-      stopFace();
-      show("kiosk");
-      await kioskComplete(picked ? picked.username : "Citizen", lastFrameB64);
-      return;
-    }
     await refresh();
   } catch (err) {
     say($("pick-msg"), err.message, "err");
@@ -511,18 +575,249 @@ async function choose(discord_id) {
 }
 $("filter").addEventListener("input", renderMembers);
 
-// ---------- face login ----------
-// While the "face the machine" view is open, a webcam frame goes to the
-// server every ~1.5s; the server runs the same face models as the kiosk
-// and signs the matched person in. The name picker stays as fallback.
-let faceStream = null, faceTimer = null, faceBusy = false;
+// ---------- camera, scanning, and the System's workings ----------
+// One self-pacing loop: it sends the next frame as soon as the last answer
+// comes back, so the box keeps up with the network instead of a fixed 1.5s
+// tick. Most passes are detect-only (cheap: no SFace embedding or matching);
+// a full recognition runs at most every RECOG_EVERY_MS.
+let faceStream = null, scanTimer = null;
+let recognize = true;           // false on the enrol preview: locate, do not identify
+let lastRecognizeAt = 0;
+let lastFrameB64 = null;        // the frame a check-in photo is taken from
+let lastScanMs = 0;
+
+const SCAN_GAP_MS = 40;         // breathing room between passes
+const RECOG_EVERY_MS = 700;     // how often the expensive pass may run
+
+// Auto-zoom: crop toward the face and upscale, so someone at arm's length
+// still clears the detector's minimum face size.
+let roi = null;                 // region of interest, in video pixels
+const MAX_ZOOM = 3;
+const TARGET_FACE_FRAC = 0.35;  // aim for the face filling this much of the crop
+let noFaceRuns = 0;
+
+// Drawn state is interpolated toward the scanned state every animation
+// frame, so the overlay glides at 60fps rather than stepping at scan rate.
+let targetBox = null, smoothBox = null;
+let targetMarks = null, smoothMarks = null;
+let boxColour = "#58c08a";
+let rafHandle = null;
+let grabCanvas = null;
+let lastDiag = null;
 
 function faceSay(text, good = false) {
   $("face-status").textContent = text;
   $("face-status").className = good ? "good" : "";
 }
 
-async function startFace() {
+// ---- frame capture (honours the current zoom) ----
+function grabFrame(quality = 0.6) {
+  const video = $("face-video");
+  if (!faceStream || !video.videoWidth) return null;
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (!roi) roi = { x: 0, y: 0, w: vw, h: vh };
+  if (!grabCanvas) grabCanvas = document.createElement("canvas");
+  const outW = 640, outH = Math.max(1, Math.round(outW * roi.h / roi.w));
+  if (grabCanvas.width !== outW || grabCanvas.height !== outH) {
+    grabCanvas.width = outW; grabCanvas.height = outH;
+  }
+  grabCanvas.getContext("2d")
+    .drawImage(video, roi.x, roi.y, roi.w, roi.h, 0, 0, outW, outH);
+  return {
+    b64: grabCanvas.toDataURL("image/jpeg", quality).split(",")[1],
+    roi: { ...roi }, out: { w: outW, h: outH },
+  };
+}
+
+// Coordinates come back in the cropped frame's space; put them back into
+// video space or the box drifts away from the face as we zoom.
+function boxToVideo(box, sent) {
+  const kx = sent.roi.w / sent.out.w, ky = sent.roi.h / sent.out.h;
+  return { x: sent.roi.x + box.x * kx, y: sent.roi.y + box.y * ky,
+           w: box.w * kx, h: box.h * ky };
+}
+
+function updateRoi(faceVideo, vw, vh) {
+  const wantW = Math.min(vw, Math.max(vw / MAX_ZOOM, faceVideo.w / TARGET_FACE_FRAC));
+  const wantH = wantW * (vh / vw);
+  const cx = faceVideo.x + faceVideo.w / 2, cy = faceVideo.y + faceVideo.h / 2;
+  const nx = Math.max(0, Math.min(vw - wantW, cx - wantW / 2));
+  const ny = Math.max(0, Math.min(vh - wantH, cy - wantH / 2));
+  const e = 0.22;   // ease, so zoom glides instead of snapping
+  roi = { x: roi.x + (nx - roi.x) * e, y: roi.y + (ny - roi.y) * e,
+          w: roi.w + (wantW - roi.w) * e, h: roi.h + (wantH - roi.h) * e };
+}
+
+function widenRoi(vw, vh) {
+  const e = 0.18;
+  roi = { x: roi.x * (1 - e), y: roi.y * (1 - e),
+          w: roi.w + (vw - roi.w) * e, h: roi.h + (vh - roi.h) * e };
+}
+
+// ---- overlay ----
+function overlayGeometry() {
+  const video = $("face-video"), overlay = $("face-overlay");
+  const rect = video.getBoundingClientRect();
+  if (!rect.width || !rect.height || !video.videoWidth) return null;
+  if (overlay.width !== Math.round(rect.width)) overlay.width = Math.round(rect.width);
+  if (overlay.height !== Math.round(rect.height)) overlay.height = Math.round(rect.height);
+  const vw = video.videoWidth, vh = video.videoHeight;
+  const fit = getComputedStyle(video).objectFit;
+  const k = fit === "cover"
+    ? Math.max(overlay.width / vw, overlay.height / vh)
+    : Math.min(overlay.width / vw, overlay.height / vh);
+  return { ctx: overlay.getContext("2d"), overlay, k,
+           offX: (overlay.width - vw * k) / 2, offY: (overlay.height - vh * k) / 2 };
+}
+
+function renderOverlay() {
+  const g = overlayGeometry();
+  if (!g) return;
+  g.ctx.clearRect(0, 0, g.overlay.width, g.overlay.height);
+  if (!smoothBox) return;
+
+  const x = smoothBox.x * g.k + g.offX, y = smoothBox.y * g.k + g.offY;
+  const w = smoothBox.w * g.k, h = smoothBox.h * g.k;
+
+  g.ctx.strokeStyle = boxColour;
+  g.ctx.lineWidth = 3;
+  g.ctx.shadowColor = boxColour;
+  g.ctx.shadowBlur = 12;
+  const arm = Math.max(14, Math.min(w, h) * 0.22);
+  const corners = [[x, y, 1, 1], [x + w, y, -1, 1], [x, y + h, 1, -1], [x + w, y + h, -1, -1]];
+  g.ctx.beginPath();
+  for (const [cx, cy, sx, sy] of corners) {
+    g.ctx.moveTo(cx + sx * arm, cy); g.ctx.lineTo(cx, cy); g.ctx.lineTo(cx, cy + sy * arm);
+  }
+  g.ctx.stroke();
+
+  // A sweep line travelling down the face: this is the System reading you.
+  const phase = (Date.now() % 1600) / 1600;
+  g.ctx.globalAlpha = 0.55;
+  g.ctx.lineWidth = 2;
+  g.ctx.beginPath();
+  g.ctx.moveTo(x, y + h * phase); g.ctx.lineTo(x + w, y + h * phase);
+  g.ctx.stroke();
+  g.ctx.globalAlpha = 1;
+
+  // The five landmarks the detector actually keys on, plus a light mesh.
+  if (smoothMarks && smoothMarks.length === 5) {
+    const pts = smoothMarks.map((m) => [m[0] * g.k + g.offX, m[1] * g.k + g.offY]);
+    g.ctx.shadowBlur = 0;
+    g.ctx.strokeStyle = boxColour;
+    g.ctx.globalAlpha = 0.4;
+    g.ctx.lineWidth = 1;
+    g.ctx.beginPath();
+    for (const [a, b] of [[0, 1], [0, 2], [1, 2], [2, 3], [2, 4], [3, 4]]) {
+      g.ctx.moveTo(pts[a][0], pts[a][1]); g.ctx.lineTo(pts[b][0], pts[b][1]);
+    }
+    g.ctx.stroke();
+    g.ctx.globalAlpha = 1;
+    g.ctx.fillStyle = boxColour;
+    for (const [px, py] of pts) {
+      g.ctx.beginPath(); g.ctx.arc(px, py, 2.5, 0, Math.PI * 2); g.ctx.fill();
+    }
+  }
+}
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function startDrawLoop() {
+  if (rafHandle) return;
+  const step = () => {
+    rafHandle = requestAnimationFrame(step);
+    if (!faceStream) { smoothBox = null; smoothMarks = null; renderOverlay(); return; }
+    const t = 0.35;
+    if (targetBox) {
+      smoothBox = smoothBox ? {
+        x: lerp(smoothBox.x, targetBox.x, t), y: lerp(smoothBox.y, targetBox.y, t),
+        w: lerp(smoothBox.w, targetBox.w, t), h: lerp(smoothBox.h, targetBox.h, t),
+      } : { ...targetBox };
+      smoothMarks = (smoothMarks && targetMarks && smoothMarks.length === targetMarks.length)
+        ? smoothMarks.map((m, i) => [lerp(m[0], targetMarks[i][0], t), lerp(m[1], targetMarks[i][1], t)])
+        : (targetMarks ? targetMarks.map((m) => [...m]) : null);
+    } else {
+      smoothBox = null; smoothMarks = null;
+    }
+    renderOverlay();
+  };
+  rafHandle = requestAnimationFrame(step);
+}
+
+function stopDrawLoop() {
+  if (rafHandle) { cancelAnimationFrame(rafHandle); rafHandle = null; }
+  smoothBox = null; smoothMarks = null; targetBox = null; targetMarks = null;
+  renderOverlay();
+}
+
+// ---- the diagnostic panel ----
+function setStage(stage) {
+  const order = ["detect", "align", "embed", "match"];
+  const at = order.indexOf(stage);
+  for (const el of document.querySelectorAll(".diag-stages span")) {
+    const i = order.indexOf(el.dataset.stage);
+    el.classList.toggle("on", i === at);
+    el.classList.toggle("done", at >= 0 && i < at);
+  }
+}
+
+function bar(id, frac, good = false) {
+  const el = $(id);
+  el.style.width = Math.max(0, Math.min(1, frac)) * 100 + "%";
+  el.classList.toggle("good", good);
+}
+
+function renderDiag(r, zoom) {
+  if (!r) return;
+  $("diag").classList.remove("hidden");
+  $("d-rate").textContent = lastScanMs + " ms";
+  $("d-zoom").textContent = "zoom " + zoom.toFixed(1) + "\u00d7";
+
+  if (!r.face) {
+    setStage("detect");
+    for (const [id, v] of [["d-conf", "—"], ["d-size", "—"], ["d-yaw", "—"], ["d-match", "—"]]) {
+      $(id).textContent = v; $(id).className = "";
+    }
+    bar("d-conf-bar", 0); bar("d-size-bar", 0); bar("d-yaw-bar", 0); bar("d-match-bar", 0);
+    return;
+  }
+
+  $("d-conf").textContent = (r.score != null ? r.score.toFixed(2) : "—");
+  bar("d-conf-bar", r.score || 0, (r.score || 0) > 0.9);
+
+  const px = Math.round(Math.min(r.face.w, r.face.h));
+  const min = r.min_size || 90;
+  $("d-size").textContent = px + " px";
+  $("d-size").className = r.too_small ? "bad" : "good";
+  bar("d-size-bar", px / (min * 2), !r.too_small);
+
+  const yaw = Math.abs(r.yaw || 0);
+  $("d-yaw").textContent = yaw < 0.12 ? "facing" : yaw.toFixed(2) + " off";
+  $("d-yaw").className = yaw < 0.12 ? "good" : "bad";
+  bar("d-yaw-bar", 1 - Math.min(1, yaw / 0.5), yaw < 0.12);
+
+  const thresh = r.threshold || 0.363;
+  $("d-thresh").style.left = Math.min(1, thresh) * 100 + "%";
+  if (r.match) {
+    setStage("match");
+    $("d-match").textContent = r.match.score.toFixed(3);
+    $("d-match").className = "good";
+    bar("d-match-bar", r.match.score, true);
+  } else if (r.best_score != null) {
+    setStage("match");
+    $("d-match").textContent = r.best_score.toFixed(3);
+    $("d-match").className = "bad";
+    bar("d-match-bar", r.best_score);
+  } else {
+    setStage(r.too_small ? "detect" : "align");
+    $("d-match").textContent = "—"; $("d-match").className = "";
+    bar("d-match-bar", 0);
+  }
+}
+
+// ---- camera lifecycle ----
+async function startFace({ identify = true } = {}) {
+  recognize = identify;
   if (faceStream) return;
   const card = $("face-card");
   try {
@@ -531,7 +826,7 @@ async function startFace() {
   } catch { card.classList.add("hidden"); return; }
 
   card.classList.remove("hidden");
-  $("face-video").classList.add("hidden");  // no dead black box until video flows
+  $("face-video").classList.add("hidden");
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     faceSay(window.isSecureContext
       ? "This browser has no camera support — pick your name below."
@@ -540,7 +835,7 @@ async function startFace() {
   }
   try {
     faceStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+      video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
       audio: false,
     });
   } catch {
@@ -549,152 +844,124 @@ async function startFace() {
   }
   $("face-video").classList.remove("hidden");
   $("face-video").srcObject = faceStream;
+  roi = null; noFaceRuns = 0; lastRecognizeAt = 0;
   faceSay("Hold still. Scanning…");
-  faceTimer = setInterval(faceTick, 1500);
+  startDrawLoop();
+  scanLoop();
 }
 
 function stopFace() {
-  if (faceTimer) { clearInterval(faceTimer); faceTimer = null; }
+  if (scanTimer) { clearTimeout(scanTimer); scanTimer = null; }
   if (faceStream) {
     for (const track of faceStream.getTracks()) track.stop();
     faceStream = null;
     $("face-video").srcObject = null;
   }
-  faceBusy = false;
-  clearFaceBox();
+  stopDrawLoop();
+  $("diag").classList.add("hidden");
 }
 
-// The most recent frame we sent, kept so a check-in can be posted to
-// Discord with the picture the person was actually recognized in.
-let lastFrameB64 = null;
-
-function grabFrame() {
-  const video = $("face-video");
-  if (!faceStream || video.videoWidth === 0) return null;
-  const canvas = document.createElement("canvas");
-  const scale = Math.min(1, 640 / video.videoWidth);
-  canvas.width = Math.round(video.videoWidth * scale);
-  canvas.height = Math.round(video.videoHeight * scale);
-  canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
-}
-
-// Draw the detection box over the video. `frame` is the size of the image
-// the server actually looked at, so the box scales onto the displayed video.
-function drawFaceBox(face, frame, colour) {
-  const video = $("face-video");
-  const overlay = $("face-overlay");
-  const rect = video.getBoundingClientRect();
-  if (!rect.width || !rect.height) return;
-  if (overlay.width !== Math.round(rect.width) || overlay.height !== Math.round(rect.height)) {
-    overlay.width = Math.round(rect.width);
-    overlay.height = Math.round(rect.height);
+async function scanLoop() {
+  if (!faceStream) return;
+  if (enrollBusy) {                 // the enrolment capture is driving instead
+    scanTimer = setTimeout(scanLoop, 200);
+    return;
   }
-  const ctx = overlay.getContext("2d");
-  ctx.clearRect(0, 0, overlay.width, overlay.height);
-  if (!face || !frame) return;
-
-  // The video is object-fit: cover in kiosk mode, contain elsewhere; both
-  // reduce to a uniform scale plus centering offsets.
-  const scale = Math.max(overlay.width / frame.w, overlay.height / frame.h);
-  const fit = video.style.objectFit || getComputedStyle(video).objectFit;
-  const k = fit === "cover" ? scale : Math.min(overlay.width / frame.w, overlay.height / frame.h);
-  const offX = (overlay.width - frame.w * k) / 2;
-  const offY = (overlay.height - frame.h * k) / 2;
-
-  const x = face.x * k + offX, y = face.y * k + offY;
-  const w = face.w * k, h = face.h * k;
-
-  ctx.strokeStyle = colour;
-  ctx.lineWidth = 3;
-  ctx.shadowColor = colour;
-  ctx.shadowBlur = 12;
-  // Corner brackets rather than a full rectangle — reads as a scanner.
-  const arm = Math.max(14, Math.min(w, h) * 0.22);
-  const corners = [[x, y, 1, 1], [x + w, y, -1, 1], [x, y + h, 1, -1], [x + w, y + h, -1, -1]];
-  ctx.beginPath();
-  for (const [cx, cy, sx, sy] of corners) {
-    ctx.moveTo(cx + sx * arm, cy); ctx.lineTo(cx, cy); ctx.lineTo(cx, cy + sy * arm);
-  }
-  ctx.stroke();
-}
-
-function clearFaceBox() { drawFaceBox(null, null, "#0000"); }
-
-async function faceTick() {
   const video = $("face-video");
-  if (faceBusy || !faceStream || video.videoWidth === 0) return;
-  faceBusy = true;
+  const wantRecog = recognize && (Date.now() - lastRecognizeAt >= RECOG_EVERY_MS);
+  const t0 = performance.now();
   try {
-    const image_b64 = grabFrame();
-    if (!image_b64) return;
-    lastFrameB64 = image_b64;
-    const result = await api("/face-scan", { method: "POST", body: JSON.stringify({ image_b64 }) });
-
-    if (ENROLL) {
-      if (enrollBusy) return;   // the capture loop is driving the box itself
-      if (result.face) {
-        drawFaceBox(result.face, result.frame, "#58c08a");
-        faceSay(enrollBusy ? faceStatusText : "Face acquired. Ready to register.", true);
-      } else {
-        clearFaceBox();
-        faceSay(result.detail || "Looking for a face…");
-      }
-      return;
-    }
-
-    if (result.match) {
-      drawFaceBox(result.face, result.frame, "#58c08a");   // green: known
-      faceSay(`Recognized: ${result.match.name}. The System is pleased.`, true);
-      stopFace();
-      if (KIOSK && kioskAction) { await kioskComplete(result.match.name, image_b64); return; }
-      await refresh();
-      return;
-    }
-    if (result.face) {
-      drawFaceBox(result.face, result.frame, "#d9a441");    // amber: seen, unknown
-      faceSay(result.detail || "Hold still…");
-    } else {
-      clearFaceBox();
-      faceSay(result.detail || "Looking for a face…");
+    const sent = grabFrame(wantRecog ? 0.75 : 0.5);
+    if (sent && video.videoWidth) {
+      const r = await api("/face-scan", {
+        method: "POST",
+        body: JSON.stringify({ image_b64: sent.b64, detect_only: !wantRecog }),
+      });
+      lastScanMs = Math.round(performance.now() - t0);
+      if (wantRecog) { lastRecognizeAt = Date.now(); lastFrameB64 = sent.b64; }
+      if (await handleScan(r, sent)) return;   // recognized: the loop is over
     }
   } catch (err) {
-    clearFaceBox();
     faceSay(err.message);
-  } finally {
-    faceBusy = false;
+    targetBox = null; targetMarks = null;
   }
+  if (faceStream) scanTimer = setTimeout(scanLoop, SCAN_GAP_MS);
+}
+
+// Returns true when the scan ended the session (somebody was recognized).
+async function handleScan(r, sent) {
+  const video = $("face-video");
+  const vw = video.videoWidth, vh = video.videoHeight;
+
+  if (r.face) {
+    noFaceRuns = 0;
+    const faceVideo = boxToVideo(r.face, sent);
+    targetBox = faceVideo;
+    if (r.landmarks) {
+      const kx = sent.roi.w / sent.out.w, ky = sent.roi.h / sent.out.h;
+      targetMarks = r.landmarks.map(([mx, my]) =>
+        [sent.roi.x + mx * kx, sent.roi.y + my * ky]);
+    }
+    updateRoi(faceVideo, vw, vh);
+  } else {
+    noFaceRuns++;
+    if (noFaceRuns > 3) { targetBox = null; targetMarks = null; widenRoi(vw, vh); }
+  }
+  renderDiag(r, roi ? vw / roi.w : 1);
+
+  if (r.match) {
+    boxColour = "#58c08a";
+    faceSay(`Recognized: ${r.match.name}. The System is pleased.`, true);
+    if (KIOSK && kioskAction) {
+      stopFace();
+      await kioskComplete(r.match.name, lastFrameB64);
+      return true;
+    }
+    if (!ENROLL) { stopFace(); await refresh(); return true; }
+    return false;
+  }
+
+  boxColour = r.face ? (r.too_small ? "#d9a441" : "#d9a441") : "#58c08a";
+  if (!enrollBusy) faceSay(r.detail || (r.face ? "Hold still…" : "Looking for a face…"));
+  return false;
 }
 
 // ---------- kiosk terminal ----------
-// idle -> press a button -> identify (face, or the picker) -> record it
-// -> show the outcome -> forget who it was -> idle.
+// idle -> identify (face) -> result -> idle, with a name picker and
+// registration reachable from the identify step. Every screen gets back to
+// idle, and nothing here signs the terminal out by accident.
 let kioskAction = null;     // "/checkin" | "/checkout" while identifying
 let kioskTimer = null;      // returns the screen to idle unattended
 
 const SCAN_GIVE_UP_MS = 45000;
 const RESULT_HOLD_MS = 8000;
+const PICK_GIVE_UP_MS = 60000;
+
+const kPanels = ["k-idle", "k-scan", "k-pick"];
+function kShow(name) {
+  for (const id of kPanels) $(id).classList.toggle("hidden", id !== name);
+}
+
+function actionWord() { return kioskAction === "/checkout" ? "out" : "in"; }
 
 function kioskIdle({ keepMessage = false } = {}) {
   clearTimeout(kioskTimer); kioskTimer = null;
   kioskAction = null;
   stopFace();
   $("sendbar").classList.add("hidden");
-  $("kiosk-scan").classList.add("hidden");
-  $("kiosk-buttons").classList.remove("hidden");
-  $("kiosk-sub").textContent = "Press a button, then look at the camera.";
+  $("enroll-back").classList.add("hidden");
   if (!keepMessage) say($("kiosk-msg"), "");
+  kShow("k-idle");
   show("kiosk");
   loadKioskLists();
 }
 
 async function kioskBegin(action) {
   kioskAction = action;
-  $("kiosk-buttons").classList.add("hidden");
-  $("kiosk-scan").classList.remove("hidden");
-  $("kiosk-sub").textContent = action === "/checkin"
-    ? "Checking in. Look at the camera." : "Checking out. Look at the camera.";
   say($("kiosk-msg"), "");
+  $("k-scan-title").innerHTML = `Checking <span class="hl">${actionWord()}.</span>`;
+  kShow("k-scan");
+  show("kiosk");
   faceHome("kiosk");
   await startFace();
   clearTimeout(kioskTimer);
@@ -702,6 +969,46 @@ async function kioskBegin(action) {
     kioskIdle();
     say($("kiosk-msg"), "Nobody recognized. Try again.", "warn");
   }, SCAN_GIVE_UP_MS);
+}
+
+async function kioskPick() {
+  clearTimeout(kioskTimer);
+  $("k-pick-title").innerHTML = `Who is checking <span class="hl">${actionWord()}?</span>`;
+  members = await api("/members").then((r) => r.members).catch(() => []);
+  renderKioskMembers();
+  kShow("k-pick");
+  faceHome("kpick");            // keep scanning: a face can still win
+  await startFace();
+  kioskTimer = setTimeout(() => kioskIdle(), PICK_GIVE_UP_MS);
+}
+
+function renderKioskMembers() {
+  const needle = $("k-filter").value.trim().toLowerCase();
+  const shown = members.filter((m) => m.username.toLowerCase().includes(needle));
+  const list = $("k-member-list");
+  list.innerHTML = "";
+  if (!shown.length) {
+    list.innerHTML = '<li class="empty">No such citizen on record — register below.</li>';
+    return;
+  }
+  for (const m of shown.slice(0, 40)) {
+    const li = document.createElement("li");
+    const btn = document.createElement("button");
+    btn.className = "ghost";
+    btn.textContent = m.username;
+    btn.addEventListener("click", async () => {
+      try {
+        await api("/select", { method: "POST", body: JSON.stringify({ discord_id: m.discord_id }) });
+        stopFace();
+        await kioskComplete(m.username, lastFrameB64);
+      } catch (err) {
+        say($("kiosk-msg"), err.message, "err");
+        kioskIdle({ keepMessage: true });
+      }
+    });
+    li.append(btn);
+    list.append(li);
+  }
 }
 
 // The camera flash, then the still flying off toward Discord.
@@ -724,7 +1031,6 @@ function sendPhotoToDiscord(frameB64) {
     width: rect.width + "px", height: rect.height + "px",
   });
   document.body.append(shot);
-  // Fly toward the message panel, which is where the outcome is reported.
   const target = $("kiosk-msg").getBoundingClientRect();
   shot.style.setProperty("--dx", (target.left - rect.left) + "px");
   shot.style.setProperty("--dy", (target.top - rect.top) + "px");
@@ -747,14 +1053,11 @@ async function kioskComplete(name, frameB64) {
   const photo = frameB64 || lastFrameB64;
   const checkingIn = action === "/checkin";
 
-  if (photo && checkingIn) { flashCamera(); sendbar("Transmitting to Discord…"); }
+  if (photo && checkingIn) { flashCamera(); sendbar("Transmitting to Discord…"); sendPhotoToDiscord(photo); }
   stopFace();
-  if (photo && checkingIn) sendPhotoToDiscord(photo);
-
-  $("kiosk-scan").classList.add("hidden");
-  $("kiosk-buttons").classList.remove("hidden");
-  $("kiosk-sub").textContent = "Press a button, then look at the camera.";
+  kShow("k-idle");
   show("kiosk");
+
   try {
     const body = checkingIn && photo ? JSON.stringify({ photo_b64: photo }) : undefined;
     const result = await api(action, { method: "POST", ...(body ? { body } : {}) });
@@ -816,15 +1119,35 @@ async function loadKioskLists() {
   }
 }
 
-$("k-checkin").addEventListener("click", () => kioskBegin("/checkin"));
-$("k-checkout").addEventListener("click", () => kioskBegin("/checkout"));
-$("k-cancel").addEventListener("click", () => kioskIdle());
-$("k-manual").addEventListener("click", async () => {
+// Registration, reached from the kiosk rather than by knowing a URL.
+async function kioskRegister() {
+  clearTimeout(kioskTimer); kioskTimer = null;
+  kioskAction = null;
   stopFace();
-  faceHome("pick");
-  members = await api("/members").then((r) => r.members).catch(() => []);
-  renderMembers();
-  show("pick");
+  $("enroll-back").classList.remove("hidden");
+  await startEnroll();
+}
+
+if (KIOSK) {
+  $("k-checkin").addEventListener("click", () => kioskBegin("/checkin"));
+  $("k-checkout").addEventListener("click", () => kioskBegin("/checkout"));
+  $("k-manual").addEventListener("click", () => kioskPick());
+  $("k-back-scan").addEventListener("click", () => kioskIdle());
+  $("k-back-pick").addEventListener("click", () => kioskBegin(kioskAction || "/checkin"));
+  $("k-filter").addEventListener("input", renderKioskMembers);
+  $("k-register").addEventListener("click", () => kioskRegister());
+  $("k-pick-register").addEventListener("click", () => kioskRegister());
+  $("k-endsession").addEventListener("click", async (e) => {
+    e.preventDefault();
+    stopFace();
+    await api("/logout", { method: "POST" }).catch(() => {});
+    show("login");
+  });
+}
+
+$("enroll-back").addEventListener("click", () => {
+  stopFace();
+  if (KIOSK) kioskIdle(); else show("login");
 });
 
 // ---------- enrolment (no password; the server limits it to the lab) ----------
@@ -839,30 +1162,35 @@ let faceStatusText = "";
 async function captureFaceSample(index) {
   const deadline = Date.now() + ENROLL_FIND_MS;
   while (Date.now() < deadline) {
-    const frame = grabFrame();
-    if (frame) {
+    const sent = grabFrame(0.75);
+    if (sent) {
       try {
-        const scan = await api("/face-scan", { method: "POST", body: JSON.stringify({ image_b64: frame }) });
-        if (scan.face) {
-          drawFaceBox(scan.face, scan.frame, "#58c08a");
+        const r = await api("/face-scan", {
+          method: "POST",
+          body: JSON.stringify({ image_b64: sent.b64, detect_only: true }),
+        });
+        await handleScan(r, sent);   // keeps the box, the zoom and the panel live
+        // Insist the face is big enough: the server enforces the same
+        // minimum when it embeds, so a small one would just be thrown away.
+        if (r.face && !r.too_small) {
           faceStatusText = `Captured ${index} of ${ENROLL_SAMPLES}.`;
           faceSay(faceStatusText, true);
-          return frame;                      // this exact frame has a face in it
+          return sent.b64;           // this exact frame has a usable face in it
         }
-        faceSay(scan.detail || "Looking for a face…");
       } catch (err) {
         faceSay(err.message);
       }
     }
-    await new Promise((r) => setTimeout(r, 400));
+    await new Promise((r) => setTimeout(r, 250));
   }
   return null;
 }
 
 async function startEnroll() {
   show("enroll");
+  $("enroll-sub").textContent = "Type your name, then look at the camera.";
   faceHome("enroll");
-  await startFace();
+  await startFace({ identify: false });   // locate the face, do not match it
 }
 
 $("enroll-start").addEventListener("click", async () => {
@@ -1011,14 +1339,12 @@ async function refresh({ keepMessage = false } = {}) {
   if (KIOSK) { kioskIdle({ keepMessage }); return; }  // kiosk drives its own screen
 
   if (!me.person) {
-    if (STATION) { show("login"); return; }  // station never uses the picker
     members = await api("/members").then((r) => r.members).catch(() => []);
     renderMembers();
     show("pick");
     return;
   }
 
-  $("switch").classList.toggle("hidden", STATION);
   const p = me.person;
   meId = p.discord_id;
   $("hello").textContent = `Citizen ${p.name}`;

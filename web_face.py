@@ -83,16 +83,23 @@ def _known_faces() -> list:
     return known
 
 
-def scan(image_b64: str) -> dict:
-    """Locate the face in a frame and try to recognize it.
+def scan(image_b64: str, detect_only: bool = False) -> dict:
+    """Locate the face in a frame, and (unless detect_only) recognize it.
 
     Unlike identify(), the ordinary "nobody there yet" states are results
     rather than exceptions — the kiosk draws a box every frame and needs
     to know where the face is even when it does not yet know whose it is.
 
-    Returns {frame: {w, h}, face: {x, y, w, h} | None,
-             match: {discord_id, name, score} | None, detail: str | None}
+    detect_only skips the expensive half (SFace embedding + matching), so
+    the box can track at a much higher rate than recognition needs to run.
+
+    Everything the engine already computes is reported, so the kiosk can
+    show its workings: the five YuNet landmarks, the detector's own
+    confidence, head turn, face size against the size we insist on, and
+    the best match score even when nothing clears the threshold.
     """
+    from face_engine import COSINE_THRESHOLD, MIN_FACE_SIZE
+
     with _lock:
         engine = _get_engine()
         if engine is None:
@@ -102,9 +109,14 @@ def scan(image_b64: str) -> dict:
         frame = _decode_or_raise(image_b64)
         height, width = frame.shape[:2]
         out = {"frame": {"w": int(width), "h": int(height)},
-               "face": None, "match": None, "detail": None}
+               "face": None, "landmarks": None, "score": None, "yaw": None,
+               "too_small": False, "min_size": int(MIN_FACE_SIZE),
+               "threshold": float(COSINE_THRESHOLD),
+               "match": None, "best_score": None, "detail": None}
 
-        face = engine.detect_best_face(frame)
+        # min_size=0: we want to see a face that is merely too far away,
+        # so the client knows where to zoom.
+        face = engine.detect_best_face(frame, min_size=0)
         if face is None:
             out["detail"] = "No face in view — center yourself and get closer."
             return out
@@ -112,6 +124,18 @@ def scan(image_b64: str) -> dict:
         x, y, w, h = (float(v) for v in face[:4])
         out["face"] = {"x": max(0.0, x), "y": max(0.0, y),
                        "w": float(w), "h": float(h)}
+        out["landmarks"] = [[float(face[4 + i * 2]), float(face[5 + i * 2])]
+                            for i in range(5)]
+        out["score"] = float(face[14])
+        out["yaw"] = float(engine.yaw_ratio(face))
+        out["too_small"] = bool(w < MIN_FACE_SIZE or h < MIN_FACE_SIZE)
+
+        if detect_only:
+            return out
+
+        if out["too_small"]:
+            out["detail"] = "Too far away — come closer."
+            return out
 
         known = _known_faces()
         if not known:
@@ -120,6 +144,7 @@ def scan(image_b64: str) -> dict:
 
         embedding = engine.embed(frame, face)
         discord_id, name, score = engine.match(embedding, known)
+        out["best_score"] = float(score)
         if discord_id is None:
             out["detail"] = "Face not recognized — hold still, or pick your name."
             return out

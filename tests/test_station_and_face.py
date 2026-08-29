@@ -1,6 +1,7 @@
 """Tests for the station page (single-identity desktop login) and the
 web client's face login."""
 import base64
+import json
 
 import pytest
 from fastapi.testclient import TestClient
@@ -28,10 +29,14 @@ def web(db, monkeypatch):
 
 # ------------------------------------------------------------- station
 
-def test_station_page_is_served(web):
-    response = web.get("/app/station")
-    assert response.status_code == 200
-    assert "text/html" in response.headers["content-type"]
+def test_station_page_redirects_to_the_kiosk(web):
+    """The station page is retired: it credited one shared account."""
+    response = web.get("/app/station", follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"] == "kiosk"
+
+    # An old bookmark still lands somewhere useful.
+    assert web.get("/app/station").status_code == 200
 
 
 def test_station_login_binds_the_station_identity(web):
@@ -253,10 +258,12 @@ FUNNEL = {"Tailscale-Funnel-Request": "?1"}
 def faces(monkeypatch):
     """A stub face engine: every frame has a face, nothing matches."""
     monkeypatch.setattr(web_face, "available", lambda: True)
-    monkeypatch.setattr(web_face, "scan", lambda _b64: {
+    monkeypatch.setattr(web_face, "scan", lambda _b64, detect_only=False: {
         "frame": {"w": 640, "h": 480},
         "face": {"x": 10.0, "y": 20.0, "w": 100.0, "h": 120.0},
-        "match": None, "detail": "Face not recognized",
+        "landmarks": [[1.0, 2.0]] * 5, "score": 0.97, "yaw": 0.02,
+        "too_small": False, "min_size": 90, "threshold": 0.363,
+        "match": None, "best_score": 0.21, "detail": "Face not recognized",
     })
     monkeypatch.setattr(web_face, "embed_face", lambda _b64: [0.5] * 128)
 
@@ -325,11 +332,13 @@ def test_face_scan_returns_the_box_for_the_overlay(web, db, faces):
 def test_face_scan_signs_in_on_a_match(web, db, monkeypatch):
     database.get_or_create_user("42", "alice")
     monkeypatch.setattr(web_face, "available", lambda: True)
-    monkeypatch.setattr(web_face, "scan", lambda _b64: {
+    monkeypatch.setattr(web_face, "scan", lambda _b64, detect_only=False: {
         "frame": {"w": 640, "h": 480},
         "face": {"x": 1.0, "y": 2.0, "w": 3.0, "h": 4.0},
+        "landmarks": [[1.0, 2.0]] * 5, "score": 0.99, "yaw": 0.0,
+        "too_small": False, "min_size": 90, "threshold": 0.363,
         "match": {"discord_id": "42", "name": "alice", "score": 0.9},
-        "detail": None,
+        "best_score": 0.9, "detail": None,
     })
     web.post("/app/api/login", json={"password": PASSWORD})
     assert web.post("/app/api/face-scan", json={"image_b64": FRAME}).status_code == 200
@@ -340,3 +349,97 @@ def test_face_scan_without_a_session_is_refused_over_funnel(web, db, faces):
     response = web.post("/app/api/face-scan", json={"image_b64": FRAME},
                         headers=FUNNEL)
     assert response.status_code == 403
+
+
+# ------------------------------------------------- what the scanner reports
+# scan() feeds the kiosk's diagnostic panel and its auto-zoom, so it reports
+# everything the engine already computed rather than just a yes/no.
+
+class ScanEngine:
+    """Stands in for YuNet + SFace without the models."""
+
+    def __init__(self, size=120.0, score=0.95, match=("42", "alice", 0.8)):
+        self.size, self.score, self._match = size, score, match
+        self.embedded = False
+
+    def detect_best_face(self, _frame, min_size=90):
+        if self.size < min_size:
+            return None
+        # YuNet row: box, 5 landmark pairs, confidence
+        return [10.0, 20.0, self.size, self.size] + [1.0] * 10 + [self.score]
+
+    def yaw_ratio(self, _face):
+        return 0.05
+
+    def embed(self, _frame, _face):
+        self.embedded = True
+        return [0.1] * 128
+
+    def match(self, _embedding, _known):
+        return self._match
+
+
+@pytest.fixture
+def engine(monkeypatch):
+    def install(fake):
+        monkeypatch.setattr(web_face, "_get_engine", lambda: fake)
+        monkeypatch.setattr(web_face, "_decode_bgr",
+                            lambda _raw: type("F", (), {"shape": (480, 640, 3)})())
+        return fake
+    return install
+
+
+def test_scan_reports_the_engines_workings(engine, db):
+    database.save_face_encoding("42", "alice", json.dumps([0.1] * 128))
+    engine(ScanEngine())
+    out = web_face.scan(FRAME)
+    assert out["face"] == {"x": 10.0, "y": 20.0, "w": 120.0, "h": 120.0}
+    assert len(out["landmarks"]) == 5           # drawn on the face
+    assert out["score"] == 0.95                 # detector confidence
+    assert out["yaw"] == 0.05                   # head turn
+    assert out["min_size"] == 90 and out["threshold"] == 0.363
+    assert out["match"]["name"] == "alice"
+    assert out["best_score"] == 0.8
+
+
+def test_scan_reports_the_near_miss_score(engine, db):
+    """A refusal should be legible: how close was it, against what bar?"""
+    database.save_face_encoding("42", "alice", json.dumps([0.1] * 128))
+    engine(ScanEngine(match=(None, None, 0.31)))
+    out = web_face.scan(FRAME)
+    assert out["match"] is None
+    assert out["best_score"] == 0.31            # vs out["threshold"] of 0.363
+
+
+def test_detect_only_skips_the_expensive_half(engine, db):
+    fake = engine(ScanEngine())
+    out = web_face.scan(FRAME, detect_only=True)
+    assert out["face"] is not None and out["landmarks"] is not None
+    assert out["match"] is None
+    assert fake.embedded is False               # no SFace work at box speed
+
+
+def test_a_too_small_face_is_still_located(engine, db):
+    """So auto-zoom knows where to aim instead of guessing."""
+    fake = engine(ScanEngine(size=40.0))
+    out = web_face.scan(FRAME)
+    assert out["face"] is not None              # reported despite being small
+    assert out["too_small"] is True
+    assert out["match"] is None
+    assert fake.embedded is False               # not worth recognizing yet
+    assert "closer" in out["detail"].lower()
+
+
+def test_face_scan_endpoint_forwards_detect_only(web, db, monkeypatch):
+    seen = {}
+
+    def spy(_b64, detect_only=False):
+        seen["detect_only"] = detect_only
+        return {"frame": {"w": 1, "h": 1}, "face": None, "match": None,
+                "detail": None}
+    monkeypatch.setattr(web_face, "available", lambda: True)
+    monkeypatch.setattr(web_face, "scan", spy)
+
+    web.post("/app/api/login", json={"password": PASSWORD})
+    web.post("/app/api/face-scan", json={"image_b64": FRAME, "detect_only": True})
+    assert seen["detect_only"] is True

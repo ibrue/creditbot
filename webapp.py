@@ -16,9 +16,8 @@ Two login pages are served:
   /app          multi-user — after the password, people sign in with face
                 recognition (if the server has the models) or by picking
                 their name.
-  /app/station  single-identity — for the shared desktop. The password
-                signs the machine straight in as the station account
-                (WEB_STATION_ID / WEB_STATION_NAME), no picker.
+  /app/station  retired; redirects to /app/kiosk. It credited one shared
+                account for everyone at the lab computer.
   /app/kiosk    walk-up terminal — the password arms the machine, then
                 each press of Check in / Check out identifies the person
                 in front of the camera and credits them, returning to
@@ -31,7 +30,7 @@ import secrets
 from datetime import datetime
 
 from fastapi import APIRouter, Cookie, HTTPException, Request, Response
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 import checkin_logic
@@ -137,8 +136,14 @@ def index():
 
 @router.get("/station", include_in_schema=False)
 def station_page():
-    """Same page as /; the script reads the URL and becomes station mode."""
-    return index()
+    """Retired — the walk-up kiosk replaced it.
+
+    The station page signed the machine in as one shared account, so every
+    check-in at the lab computer credited "Lab Computer" rather than the
+    person standing there, and that account climbed the leaderboard.
+    /app/kiosk identifies each person instead. Old bookmarks land there.
+    """
+    return RedirectResponse(url="kiosk", status_code=307)
 
 
 @router.get("/enroll", include_in_schema=False)
@@ -306,6 +311,9 @@ def face_status(request: Request,
 
 class FaceScanRequest(BaseModel):
     image_b64: str = Field(min_length=1, max_length=8_000_000)
+    # Skip embedding and matching: just say where the face is. The kiosk
+    # runs this fast for a box that keeps up, and the full pass rarely.
+    detect_only: bool = False
 
 
 class EnrollRequest(BaseModel):
@@ -344,7 +352,7 @@ def face_scan(req: FaceScanRequest, request: Request,
         require_local(request)  # unauthenticated preview, lab network only
 
     try:
-        result = web_face.scan(req.image_b64)
+        result = web_face.scan(req.image_b64, detect_only=req.detect_only)
     except web_face.FaceLoginError as e:
         raise HTTPException(status_code=e.status, detail=e.detail)
 

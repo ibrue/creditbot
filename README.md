@@ -120,10 +120,14 @@ Every Sunday at 6 PM:
 - **Check in from a browser:** the same server hosts a web client at
   `http://<server>:8765/app` — sign in with a shared lab password, then
   face login at the webcam (same models and enrollments as the kiosk) or
-  pick your name, from any computer or phone. The shared lab desktop uses
-  `http://<server>:8765/app/station` instead: the password alone signs it
-  in as one station account, no picker. Reach either from outside the lab
-  over Tailscale rather than port-forwarding.
+  pick your name, from any computer or phone.
+- **Browser kiosk:** the lab's shared computer uses
+  `http://<server>:8765/app/kiosk` — the password arms it once, then each
+  press of Check in / Check out recognizes whoever is standing there and
+  credits *them*. Newcomers register themselves at `/app/enroll`, no
+  password needed. (`/app/station`, which credited one shared account for
+  everybody, is retired and redirects here.) Reach any of it from outside
+  the lab over Tailscale rather than port-forwarding.
 - **Admin from a browser:** `http://<server>:8765/app/admin` hooks the
   system up to your Discord server with a GUI — paste the bot token, test
   it, pick the server and channels from dropdowns — and shows a live
