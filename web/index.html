@@ -112,6 +112,13 @@
   .hint { color: var(--dim); font-size: .83rem; margin: 8px 0 0; line-height: 1.55; }
   .hidden { display: none !important; }
 
+  /* Kiosk mode: a walk-up terminal, read from across the room. */
+  body.kiosk .wrap { max-width: 760px; }
+  body.kiosk .big { padding: 40px 18px; font-size: 1.5rem; letter-spacing: .04em; }
+  body.kiosk #kiosk-msg { font-size: 1.15rem; padding: 18px 20px; }
+  body.kiosk h1 { font-size: 2rem; }
+  #kiosk-scan #face-video { max-height: 46vh; object-fit: cover; }
+
   .stats { display: grid; grid-template-columns: repeat(3, 1fr); }
   .stat { padding: 14px; border-right: 1px solid var(--line); }
   .stat:last-child { border-right: 0; }
@@ -211,6 +218,7 @@
     <h1>Identify <span class="hl">yourself.</span></h1>
     <p class="sub">The System will recognize your face — or accept a manual identification.</p>
     <div id="pick-msg" class="msg err"></div>
+    <div id="pick-face-slot"></div>
     <div class="block hidden" id="face-card">
       <div class="block-head">Recognition <small>the System never forgets a face</small></div>
       <div class="block-body">
@@ -227,6 +235,42 @@
       </div>
     </div>
     <button class="ghost" id="signout-pick">Sign out</button>
+  </section>
+
+  <!-- ---------------- Kiosk (walk-up terminal) ---------------- -->
+  <section id="kiosk-view" class="hidden">
+    <h1>The lab is <span class="hl">watching.</span></h1>
+    <p class="sub" id="kiosk-sub">Press a button, then look at the camera.</p>
+
+    <div id="kiosk-msg" class="msg" style="margin-top:16px"></div>
+
+    <div class="row" id="kiosk-buttons" style="margin:18px 0 22px">
+      <button class="big checkin" id="k-checkin">Check in</button>
+      <button class="big checkout" id="k-checkout">Check out</button>
+    </div>
+
+    <div id="kiosk-scan" class="hidden" style="margin-bottom:22px">
+      <div id="kiosk-face-slot"></div>
+      <div class="row" style="margin-top:12px">
+        <button class="ghost" id="k-manual">Pick your name</button>
+        <button class="ghost" id="k-cancel">Cancel</button>
+      </div>
+    </div>
+
+    <div class="block">
+      <div class="block-head">Observed in the lab <small>presence verified</small></div>
+      <div class="block-body"><ul id="k-whos-in"></ul></div>
+    </div>
+
+    <div class="block">
+      <div class="block-head">Most loyal citizens <small>the Supreme Leader is crowned weekly</small></div>
+      <div class="block-body"><ul id="k-board"></ul></div>
+    </div>
+
+    <div class="footnote">
+      <span>creditbot · the System sees all</span>
+      <a class="quiet" href="admin">Admin</a>
+    </div>
   </section>
 
   <!-- ---------------- Main ---------------- -->
@@ -290,7 +334,8 @@
 <script>
 "use strict";
 const $ = (id) => document.getElementById(id);
-const views = { login: $("login-view"), pick: $("pick-view"), app: $("app-view") };
+const views = { login: $("login-view"), pick: $("pick-view"), app: $("app-view"),
+                kiosk: $("kiosk-view") };
 
 // The same page serves /app (multi-user) and /app/station (the shared
 // desktop): station mode signs straight in as the station account.
@@ -301,6 +346,25 @@ if (STATION) {
   document.querySelector("#login-view .sub").textContent =
     "This terminal reports as the shared lab account.";
 }
+
+// /app/kiosk is the walk-up terminal: the password arms the machine, then
+// every action identifies the person in front of the camera and credits
+// them, returning to idle so nobody inherits the previous person's session.
+const KIOSK = /\/kiosk\/?$/.test(location.pathname);
+if (KIOSK) {
+  document.title = "Lab Kiosk";
+  document.body.classList.add("kiosk");
+  $("sys-name").innerHTML = "CREDITBOT<em>*</em> LAB KIOSK";
+  document.querySelector("#login-view .sub").textContent =
+    "The lab password arms this terminal. Members identify by face.";
+}
+
+// The camera card is shared between the picker and the kiosk; park it in
+// whichever slot is on screen so there is only ever one <video> element.
+function faceHome(where) {
+  $(where === "kiosk" ? "kiosk-face-slot" : "pick-face-slot").append($("face-card"));
+}
+faceHome("pick");
 
 // Masthead clock — a punch clock should show the time.
 function tickClock() {
@@ -373,6 +437,13 @@ function renderMembers() {
 async function choose(discord_id) {
   try {
     await api("/select", { method: "POST", body: JSON.stringify({ discord_id }) });
+    if (KIOSK && kioskAction) {
+      const picked = members.find((m) => String(m.discord_id) === String(discord_id));
+      stopFace();
+      show("kiosk");
+      await kioskComplete(picked ? picked.username : "Citizen");
+      return;
+    }
     await refresh();
   } catch (err) {
     say($("pick-msg"), err.message, "err");
@@ -446,6 +517,7 @@ async function faceTick() {
     const result = await api("/face-login", { method: "POST", body: JSON.stringify({ image_b64 }) });
     faceSay(`Recognized: ${result.name}. The System is pleased.`, true);
     stopFace();
+    if (KIOSK && kioskAction) { await kioskComplete(result.name); return; }
     await refresh();
     return;
   } catch (err) {
@@ -456,6 +528,118 @@ async function faceTick() {
     faceBusy = false;
   }
 }
+
+// ---------- kiosk terminal ----------
+// idle -> press a button -> identify (face, or the picker) -> record it
+// -> show the outcome -> forget who it was -> idle.
+let kioskAction = null;     // "/checkin" | "/checkout" while identifying
+let kioskTimer = null;      // returns the screen to idle unattended
+
+const SCAN_GIVE_UP_MS = 45000;
+const RESULT_HOLD_MS = 8000;
+
+function kioskIdle({ keepMessage = false } = {}) {
+  clearTimeout(kioskTimer); kioskTimer = null;
+  kioskAction = null;
+  stopFace();
+  $("kiosk-scan").classList.add("hidden");
+  $("kiosk-buttons").classList.remove("hidden");
+  $("kiosk-sub").textContent = "Press a button, then look at the camera.";
+  if (!keepMessage) say($("kiosk-msg"), "");
+  show("kiosk");
+  loadKioskLists();
+}
+
+async function kioskBegin(action) {
+  kioskAction = action;
+  $("kiosk-buttons").classList.add("hidden");
+  $("kiosk-scan").classList.remove("hidden");
+  $("kiosk-sub").textContent = action === "/checkin"
+    ? "Checking in. Look at the camera." : "Checking out. Look at the camera.";
+  say($("kiosk-msg"), "");
+  faceHome("kiosk");
+  await startFace();
+  clearTimeout(kioskTimer);
+  kioskTimer = setTimeout(() => {
+    kioskIdle();
+    say($("kiosk-msg"), "Nobody recognized. Try again.", "warn");
+  }, SCAN_GIVE_UP_MS);
+}
+
+// Runs once somebody has been identified, by face or by name.
+async function kioskComplete(name) {
+  clearTimeout(kioskTimer); kioskTimer = null;
+  const action = kioskAction;
+  kioskAction = null;
+  stopFace();
+  $("kiosk-scan").classList.add("hidden");
+  $("kiosk-buttons").classList.remove("hidden");
+  $("kiosk-sub").textContent = "Press a button, then look at the camera.";
+  show("kiosk");
+  try {
+    const result = await api(action, { method: "POST" });
+    const said = describeResult(result, name);
+    say($("kiosk-msg"), said.text, said.kind);
+  } catch (err) {
+    say($("kiosk-msg"), err.message, "err");
+  }
+  // Never leave the terminal holding the last person's identity.
+  await api("/forget", { method: "POST" }).catch(() => {});
+  await loadKioskLists();
+  kioskTimer = setTimeout(() => kioskIdle(), RESULT_HOLD_MS);
+}
+
+async function loadKioskLists() {
+  const [inLab, boards] = await Promise.all([
+    api("/whos-in").catch(() => ({ checked_in: [] })),
+    api("/leaderboard").catch(() => ({ weekly: [] })),
+  ]);
+  const inList = $("k-whos-in");
+  inList.innerHTML = "";
+  if (!inLab.checked_in.length) {
+    inList.innerHTML = '<li class="empty">Nobody under observation. The lab sits empty.</li>';
+  } else {
+    for (const person of inLab.checked_in) {
+      const li = document.createElement("li");
+      const who = document.createElement("span");
+      who.textContent = person.name;
+      const meta = document.createElement("span");
+      meta.className = "meta";
+      meta.textContent = person.duration;
+      li.append(who, meta);
+      inList.append(li);
+    }
+  }
+  const bList = $("k-board");
+  bList.innerHTML = "";
+  const rows = boards.weekly || [];
+  if (!rows.length) {
+    bList.innerHTML = '<li class="empty">No loyalty demonstrated this week.</li>';
+  } else {
+    rows.forEach((row, i) => {
+      const li = document.createElement("li");
+      const who = document.createElement("span");
+      who.innerHTML = `<span class="rank">${String(i + 1).padStart(2, "0")}</span>`;
+      who.append(row.username);
+      const meta = document.createElement("span");
+      meta.className = "meta";
+      meta.textContent = row.weekly_credits + " cr";
+      li.append(who, meta);
+      bList.append(li);
+    });
+  }
+}
+
+$("k-checkin").addEventListener("click", () => kioskBegin("/checkin"));
+$("k-checkout").addEventListener("click", () => kioskBegin("/checkout"));
+$("k-cancel").addEventListener("click", () => kioskIdle());
+$("k-manual").addEventListener("click", async () => {
+  stopFace();
+  faceHome("pick");
+  members = await api("/members").then((r) => r.members).catch(() => []);
+  renderMembers();
+  show("pick");
+});
 
 // ---------- main ----------
 let board = { weekly: [], alltime: [] };
@@ -492,21 +676,31 @@ function switchTab(tab) {
   renderBoard();
 }
 
+function describeResult(result, who) {
+  const tag = who ? who + " — " : "";
+  if (result.status === "checked_in") {
+    const bonuses = (result.bonuses || []).join(" · ");
+    return { text: tag + "Check-in recorded. The System is pleased." + (bonuses ? "  " + bonuses : ""), kind: "ok" };
+  }
+  if (result.status === "already_checked_in") {
+    return { text: tag + `The System already sees you (checked in ${result.minutes_so_far} min ago).`, kind: "warn" };
+  }
+  if (result.status === "checked_out") {
+    const weekend = result.weekend_bonus ? " (weekend bonus)" : "";
+    return { text: tag + `Departure logged: ${result.duration} in the lab, +${result.credits_earned} credits${weekend}. The System thanks you.`, kind: "ok" };
+  }
+  if (result.status === "not_checked_in") {
+    return { text: tag + "The System has no record of your presence.", kind: "warn" };
+  }
+  return { text: tag + "Recorded.", kind: "ok" };
+}
+
 async function act(path, btn) {
   btn.disabled = true;
   try {
     const result = await api(path, { method: "POST" });
-    if (result.status === "checked_in") {
-      const bonuses = (result.bonuses || []).join(" · ");
-      say($("app-msg"), "Check-in recorded. The System is pleased." + (bonuses ? "  " + bonuses : ""), "ok");
-    } else if (result.status === "already_checked_in") {
-      say($("app-msg"), `The System already sees you (checked in ${result.minutes_so_far} min ago).`, "warn");
-    } else if (result.status === "checked_out") {
-      const weekend = result.weekend_bonus ? " (weekend bonus)" : "";
-      say($("app-msg"), `Departure logged: ${result.duration} in the lab, +${result.credits_earned} credits${weekend}. The System thanks you.`, "ok");
-    } else if (result.status === "not_checked_in") {
-      say($("app-msg"), "The System has no record of your presence.", "warn");
-    }
+    const said = describeResult(result);
+    say($("app-msg"), said.text, said.kind);
     await refresh({ keepMessage: true });
   } catch (err) {
     say($("app-msg"), err.message, "err");
@@ -539,6 +733,8 @@ async function refresh({ keepMessage = false } = {}) {
     show("login");
     return;
   }
+
+  if (KIOSK) { kioskIdle({ keepMessage }); return; }  // kiosk drives its own screen
 
   if (!me.person) {
     if (STATION) { show("login"); return; }  // station never uses the picker
@@ -611,6 +807,10 @@ async function refresh({ keepMessage = false } = {}) {
 
 // Keep durations honest without hammering the server.
 setInterval(() => { if (!views.app.classList.contains("hidden")) refresh({ keepMessage: true }); }, 60000);
+// The kiosk sits on its idle screen all day; keep its lists current too.
+setInterval(() => {
+  if (KIOSK && !kioskAction && !views.kiosk.classList.contains("hidden")) loadKioskLists();
+}, 60000);
 refresh();
 </script>
 </body>

@@ -19,6 +19,10 @@ Two login pages are served:
   /app/station  single-identity — for the shared desktop. The password
                 signs the machine straight in as the station account
                 (WEB_STATION_ID / WEB_STATION_NAME), no picker.
+  /app/kiosk    walk-up terminal — the password arms the machine, then
+                each press of Check in / Check out identifies the person
+                in front of the camera and credits them, returning to
+                idle afterwards.
 """
 import os
 from datetime import datetime
@@ -126,6 +130,18 @@ def station_page():
     return index()
 
 
+@router.get("/kiosk", include_in_schema=False)
+def kiosk_page():
+    """Same page as /; the script reads the URL and becomes kiosk mode.
+
+    The walk-up terminal for the lab: big Check in / Check out buttons,
+    each press identifies whoever is standing there by face (the same
+    models the physical kiosk uses) and credits *them*, then the screen
+    returns to idle so the next person cannot inherit the session.
+    """
+    return index()
+
+
 # ---------------------------------------------------------------- login
 
 class LoginRequest(BaseModel):
@@ -216,6 +232,19 @@ def me(creditbot_session: str | None = Cookie(default=None)):
             "checked_in_for": format_duration(minutes) if active else None,
         },
     }
+
+
+@router.post("/api/forget")
+def forget(creditbot_session: str | None = Cookie(default=None)):
+    """Forget who the last person was, staying signed in as a terminal.
+
+    The kiosk calls this after every check-in/out so the next person to
+    walk up is never operating as the previous one.
+    """
+    require_session(creditbot_session)
+    response = JSONResponse(content={"status": "ok"})
+    set_session_cookie(response, {})
+    return response
 
 
 @router.get("/api/members")

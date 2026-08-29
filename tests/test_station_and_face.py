@@ -176,3 +176,58 @@ def test_a_corrupt_enrollment_row_does_not_break_login(signed_in, face_engine):
     face_engine.setattr(web_face, "_engine", FakeEngine(match=("42", "alice")))
     response = signed_in.post("/app/api/face-login", json={"image_b64": FRAME})
     assert response.status_code == 200
+
+
+# --------------------------------------------------------------- kiosk
+# The walk-up terminal at /app/kiosk: the password arms the machine, each
+# action identifies whoever is standing there, and the identity is dropped
+# afterwards so the next person never inherits the previous one's session.
+
+def test_kiosk_page_is_served(web):
+    response = web.get("/app/kiosk")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+
+
+def test_kiosk_page_needs_the_web_client_enabled(web, monkeypatch):
+    monkeypatch.setattr(webapp, "WEB_ENABLED", False)
+    assert web.get("/app/kiosk").status_code == 404
+
+
+def test_forget_requires_a_session(web):
+    assert web.post("/app/api/forget").status_code == 401
+
+
+def test_forget_drops_the_person_but_keeps_the_session(web, db):
+    database.get_or_create_user("42", "alice")
+    web.post("/app/api/login", json={"password": PASSWORD})
+    web.post("/app/api/select", json={"discord_id": "42"})
+    assert web.get("/app/api/me").json()["person"]["name"] == "alice"
+
+    assert web.post("/app/api/forget").status_code == 200
+
+    me = web.get("/app/api/me").json()
+    assert me["signed_in"] is True       # still past the password
+    assert me["person"] is None          # but nobody is identified
+
+
+def test_after_forget_actions_need_a_fresh_identity(web, db):
+    database.get_or_create_user("42", "alice")
+    web.post("/app/api/login", json={"password": PASSWORD})
+    web.post("/app/api/select", json={"discord_id": "42"})
+    web.post("/app/api/forget")
+
+    # 409 is "pick who you are first" — the next person cannot act as alice.
+    assert web.post("/app/api/checkin").status_code == 409
+
+
+def test_forget_leaves_the_station_identity_recoverable(web, db):
+    """Forgetting is per-session state, not a change to the database."""
+    database.get_or_create_user("42", "alice")
+    web.post("/app/api/login", json={"password": PASSWORD})
+    web.post("/app/api/select", json={"discord_id": "42"})
+    web.post("/app/api/forget")
+
+    web.post("/app/api/select", json={"discord_id": "42"})
+    assert web.get("/app/api/me").json()["person"]["name"] == "alice"
+    assert database.get_user("42") is not None
