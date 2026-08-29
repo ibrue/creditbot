@@ -109,10 +109,18 @@ def signed_in(web):
 
 
 def test_face_endpoints_need_a_session(web):
+    """face-login is always session-only.
+
+    face-status is not: the password-free enrol page has to ask whether
+    the camera models are loaded before it offers to register anyone. It
+    is limited to the lab network instead (see the Funnel tests below).
+    """
     web.cookies.clear()
-    assert web.get("/app/api/face-status").status_code == 401
     assert web.post("/app/api/face-login",
                     json={"image_b64": FRAME}).status_code == 401
+    assert web.get("/app/api/face-status").status_code == 200
+    assert web.get("/app/api/face-status",
+                   headers={"Tailscale-Funnel-Request": "?1"}).status_code == 403
 
 
 def test_face_status_reports_unavailable_without_the_engine(signed_in, monkeypatch):
@@ -231,3 +239,104 @@ def test_forget_leaves_the_station_identity_recoverable(web, db):
     web.post("/app/api/select", json={"discord_id": "42"})
     assert web.get("/app/api/me").json()["person"]["name"] == "alice"
     assert database.get_user("42") is not None
+
+
+# ------------------------------------------------- self-enrolment + scanning
+# /app/enroll takes no password so a newcomer can register at the lab
+# terminal, but the server refuses it over Tailscale Funnel so the open
+# door does not extend to the public internet.
+
+FUNNEL = {"Tailscale-Funnel-Request": "?1"}
+
+
+@pytest.fixture
+def faces(monkeypatch):
+    """A stub face engine: every frame has a face, nothing matches."""
+    monkeypatch.setattr(web_face, "available", lambda: True)
+    monkeypatch.setattr(web_face, "scan", lambda _b64: {
+        "frame": {"w": 640, "h": 480},
+        "face": {"x": 10.0, "y": 20.0, "w": 100.0, "h": 120.0},
+        "match": None, "detail": "Face not recognized",
+    })
+    monkeypatch.setattr(web_face, "embed_face", lambda _b64: [0.5] * 128)
+
+
+def test_enroll_page_is_served(web):
+    assert web.get("/app/enroll").status_code == 200
+
+
+def test_enroll_needs_no_password(web, db, faces):
+    response = web.post("/app/api/enroll",
+                        json={"name": "alice", "samples": [FRAME, FRAME]})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["name"] == "alice"
+    assert body["samples"] == 2
+
+    # The member exists and is enrolled, so they can be picked and matched.
+    assert any(u["username"] == "alice" for u in database.get_all_users())
+    assert len(database.get_face_encodings()) == 2
+
+
+def test_enroll_is_refused_over_funnel(web, db, faces):
+    response = web.post("/app/api/enroll",
+                        json={"name": "mallory", "samples": [FRAME]},
+                        headers=FUNNEL)
+    assert response.status_code == 403
+    assert not database.get_all_users()
+
+
+def test_enroll_over_funnel_can_be_opened_deliberately(web, db, faces, monkeypatch):
+    monkeypatch.setattr(webapp, "WEB_ENROLL_PUBLIC", True)
+    response = web.post("/app/api/enroll",
+                        json={"name": "alice", "samples": [FRAME]},
+                        headers=FUNNEL)
+    assert response.status_code == 200
+
+
+def test_enroll_rejects_a_duplicate_name(web, db, faces):
+    database.get_or_create_user("42", "alice")
+    response = web.post("/app/api/enroll",
+                        json={"name": "Alice", "samples": [FRAME]})
+    assert response.status_code == 409
+
+
+def test_enroll_rejects_frames_with_no_face(web, db, monkeypatch):
+    monkeypatch.setattr(web_face, "available", lambda: True)
+
+    def no_face(_b64):
+        raise web_face.FaceLoginError(422, "No face in view")
+    monkeypatch.setattr(web_face, "embed_face", no_face)
+
+    response = web.post("/app/api/enroll",
+                        json={"name": "ghost", "samples": [FRAME]})
+    assert response.status_code == 422
+    assert not database.get_all_users()
+
+
+def test_face_scan_returns_the_box_for_the_overlay(web, db, faces):
+    web.post("/app/api/login", json={"password": PASSWORD})
+    body = web.post("/app/api/face-scan", json={"image_b64": FRAME}).json()
+    assert body["face"] == {"x": 10.0, "y": 20.0, "w": 100.0, "h": 120.0}
+    assert body["frame"] == {"w": 640, "h": 480}
+    assert body["match"] is None
+
+
+def test_face_scan_signs_in_on_a_match(web, db, monkeypatch):
+    database.get_or_create_user("42", "alice")
+    monkeypatch.setattr(web_face, "available", lambda: True)
+    monkeypatch.setattr(web_face, "scan", lambda _b64: {
+        "frame": {"w": 640, "h": 480},
+        "face": {"x": 1.0, "y": 2.0, "w": 3.0, "h": 4.0},
+        "match": {"discord_id": "42", "name": "alice", "score": 0.9},
+        "detail": None,
+    })
+    web.post("/app/api/login", json={"password": PASSWORD})
+    assert web.post("/app/api/face-scan", json={"image_b64": FRAME}).status_code == 200
+    assert web.get("/app/api/me").json()["person"]["name"] == "alice"
+
+
+def test_face_scan_without_a_session_is_refused_over_funnel(web, db, faces):
+    response = web.post("/app/api/face-scan", json={"image_b64": FRAME},
+                        headers=FUNNEL)
+    assert response.status_code == 403
