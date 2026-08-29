@@ -1181,7 +1181,8 @@ function renderTimeline(events) {
       const img = document.createElement("img");
       img.src = `/app/api/timeline/${e.id}/photo`;
       img.alt = e.name;
-      img.loading = "lazy";
+      // Not lazy: these are a handful of ~2KB thumbnails, and deferring
+      // them meant rows rendered with a permanently blank square.
       who.append(img);
     } else {
       const ph = document.createElement("span");
