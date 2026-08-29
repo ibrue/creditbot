@@ -211,6 +211,14 @@ def init_database():
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+    # Migration: kiosk photos can now be departures as well as arrivals, so
+    # the bot knows whether to say "checked in" or "checked out"
+    try:
+        cursor.execute(
+            "ALTER TABLE kiosk_photos ADD COLUMN action TEXT DEFAULT 'in'")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
     conn.commit()
     conn.close()
 
@@ -1058,14 +1066,17 @@ def record_streak_bonus(discord_id: str):
 # ============ Kiosk Photo Operations ============
 
 def add_kiosk_photo(discord_id: str, username: str, photo_path: str,
-                    bonuses: str = "") -> int:
-    """Queue a kiosk check-in photo for the bot to post. Returns row id."""
+                    bonuses: str = "", action: str = "in") -> int:
+    """Queue a kiosk photo for the bot to post. Returns row id.
+
+    action is "in" or "out", so the post can say which one happened.
+    """
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO kiosk_photos (discord_id, username, photo_path, bonuses)
-        VALUES (?, ?, ?, ?)
-    """, (discord_id, username, photo_path, bonuses))
+        INSERT INTO kiosk_photos (discord_id, username, photo_path, bonuses, action)
+        VALUES (?, ?, ?, ?, ?)
+    """, (discord_id, username, photo_path, bonuses, action))
     row_id = cursor.lastrowid
     conn.commit()
     conn.close()

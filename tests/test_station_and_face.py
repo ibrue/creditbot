@@ -553,3 +553,59 @@ def test_the_same_discord_account_cannot_enroll_twice(web, db, faces):
     again = web.post("/app/api/enroll",
                      json={"name": "Alice", "discord_id": "999", "samples": [FRAME]})
     assert again.status_code == 409
+
+
+# ------------------------------------------------- departures are photographed
+# The lab wants to see people leave as well as arrive, so a check-out
+# carries a photo too — and the bot has to say which one happened.
+
+def test_a_checkout_photo_reaches_the_timeline_and_discord(web, db, tmp_path, monkeypatch):
+    monkeypatch.setattr(webapp.config, "KIOSK_UPLOADS_DIR", str(tmp_path))
+    monkeypatch.setattr(webapp.config, "KIOSK_POST_PHOTOS", True)
+    database.get_or_create_user("42", "alice")
+    web.post("/app/api/login", json={"password": PASSWORD})
+    web.post("/app/api/select", json={"discord_id": "42"})
+    web.post("/app/api/checkin", json={})
+
+    result = web.post("/app/api/checkout", json={"photo_b64": FRAME}).json()
+    assert result["status"] == "checked_out"
+    assert result["photo_queued"] is True
+
+    # It shows on the timeline with its picture...
+    events = web.get("/app/api/timeline").json()["events"]
+    assert events[0]["action"] == "out" and events[0]["has_photo"] is True
+
+    # ...and is queued for Discord, tagged as a departure.
+    queued = database.get_unposted_kiosk_photos()
+    assert len(queued) == 1
+    assert queued[0]["action"] == "out"
+
+
+def test_a_checkin_photo_is_still_tagged_as_an_arrival(web, db, tmp_path, monkeypatch):
+    monkeypatch.setattr(webapp.config, "KIOSK_UPLOADS_DIR", str(tmp_path))
+    monkeypatch.setattr(webapp.config, "KIOSK_POST_PHOTOS", True)
+    database.get_or_create_user("42", "alice")
+    web.post("/app/api/login", json={"password": PASSWORD})
+    web.post("/app/api/select", json={"discord_id": "42"})
+    web.post("/app/api/checkin", json={"photo_b64": FRAME})
+
+    queued = database.get_unposted_kiosk_photos()
+    assert len(queued) == 1
+    assert queued[0]["action"] == "in"
+
+
+def test_checking_out_without_a_photo_still_works(web, db):
+    database.get_or_create_user("42", "alice")
+    web.post("/app/api/login", json={"password": PASSWORD})
+    web.post("/app/api/select", json={"discord_id": "42"})
+    web.post("/app/api/checkin", json={})
+    result = web.post("/app/api/checkout", json={}).json()
+    assert result["status"] == "checked_out"
+    assert "photo_queued" not in result
+    assert web.get("/app/api/timeline").json()["events"][0]["has_photo"] is False
+
+
+def test_old_queued_photos_without_an_action_still_post(db):
+    """The action column was added later; existing rows default to arrivals."""
+    database.add_kiosk_photo("42", "alice", "/tmp/x.jpg", bonuses="[]")
+    assert database.get_unposted_kiosk_photos()[0]["action"] == "in"

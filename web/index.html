@@ -1062,19 +1062,19 @@ async function kioskComplete(name, frameB64) {
   const action = kioskAction;
   kioskAction = null;
   const photo = frameB64;   // never a leftover frame from an earlier scan
-  const checkingIn = action === "/checkin";
 
-  if (photo && checkingIn) { flashCamera(); sendbar("Transmitting to Discord…"); sendPhotoToDiscord(photo); }
+  // Departures are photographed too — the lab wants to see people leave.
+  if (photo) { flashCamera(); sendbar("Transmitting to Discord…"); sendPhotoToDiscord(photo); }
   stopFace();
   kShow("k-idle");
   show("kiosk");
 
   try {
-    const body = checkingIn && photo ? JSON.stringify({ photo_b64: photo }) : undefined;
+    const body = photo ? JSON.stringify({ photo_b64: photo }) : undefined;
     const result = await api(action, { method: "POST", ...(body ? { body } : {}) });
     const said = describeResult(result, name);
     say($("kiosk-msg"), said.text, said.kind);
-    if (checkingIn && photo) {
+    if (photo) {
       sendbar(result.photo_queued
         ? "Photograph filed with the System — it posts to Discord."
         : "Photograph not filed (Discord posting is off).", true);

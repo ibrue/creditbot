@@ -485,10 +485,14 @@ def face_login(req: FaceLoginRequest,
 
 # ------------------------------------------------------------ check in/out
 
-class CheckinRequest(BaseModel):
+class PhotoRequest(BaseModel):
     # The kiosk sends the frame it recognized the person in, so the bot
     # can post it to the check-in channel the way the physical kiosk does.
+    # Sent on the way out as well as the way in.
     photo_b64: str | None = Field(default=None, max_length=8_000_000)
+
+
+CheckinRequest = PhotoRequest
 
 
 def _thumbnail(photo: bytes, width: int = 220) -> bytes:
@@ -526,8 +530,9 @@ def _record_event(discord_id: str, name: str, action: str, result: dict,
         print(f"⚠️ Could not record timeline event: {e}")
 
 
-def _queue_photo(discord_id: str, name: str, photo_b64: str, result: dict):
-    """Save a check-in photo for the bot to post. Never fatal to the check-in."""
+def _queue_photo(discord_id: str, name: str, photo_b64: str, result: dict,
+                 action: str = "in"):
+    """Save a kiosk photo for the bot to post. Never fatal to the check-in."""
     try:
         photo = base64.b64decode(photo_b64, validate=True)
         os.makedirs(config.KIOSK_UPLOADS_DIR, exist_ok=True)
@@ -536,7 +541,8 @@ def _queue_photo(discord_id: str, name: str, photo_b64: str, result: dict):
         with open(path, "wb") as f:
             f.write(photo)
         database.add_kiosk_photo(discord_id, name, path,
-                                 bonuses=json.dumps(result.get("bonuses", [])))
+                                 bonuses=json.dumps(result.get("bonuses", [])),
+                                 action=action)
         return True
     except Exception as e:
         print(f"⚠️ Could not queue web check-in photo: {e}")
@@ -559,13 +565,18 @@ def checkin(req: CheckinRequest | None = None,
 
 
 @router.post("/api/checkout")
-def checkout(creditbot_session: str | None = Cookie(default=None)):
+def checkout(req: PhotoRequest | None = None,
+             creditbot_session: str | None = Cookie(default=None)):
     session = require_session(creditbot_session)
     discord_id, name = require_person(session)
     result = checkin_logic.perform_checkout(discord_id)
     print(f"🌐 Web check-out: {name} -> {result['status']}")
+    photo_b64 = req.photo_b64 if req else None
     if result["status"] == "checked_out":
-        _record_event(discord_id, name, "out", result)
+        _record_event(discord_id, name, "out", result, photo_b64)
+        if photo_b64 and config.KIOSK_POST_PHOTOS:
+            result["photo_queued"] = _queue_photo(discord_id, name, photo_b64,
+                                                  result, action="out")
     return result
 
 
