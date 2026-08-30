@@ -166,6 +166,20 @@ def init_database():
 
     # Kiosk check-in photos queued for the bot to post to Discord
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS checkin_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            discord_id TEXT NOT NULL,
+            username TEXT NOT NULL,
+            action TEXT NOT NULL,
+            credits INTEGER DEFAULT 0,
+            bonuses TEXT DEFAULT '',
+            photo BLOB,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # Kiosk check-in photos queued for the bot to post
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS kiosk_photos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             discord_id TEXT,
@@ -194,6 +208,14 @@ def init_database():
     # per server message)
     try:
         cursor.execute("ALTER TABLE roasted_messages ADD COLUMN created_at TIMESTAMP")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # Migration: kiosk photos can now be departures as well as arrivals, so
+    # the bot knows whether to say "checked in" or "checked out"
+    try:
+        cursor.execute(
+            "ALTER TABLE kiosk_photos ADD COLUMN action TEXT DEFAULT 'in'")
     except sqlite3.OperationalError:
         pass  # Column already exists
 
@@ -1044,18 +1066,75 @@ def record_streak_bonus(discord_id: str):
 # ============ Kiosk Photo Operations ============
 
 def add_kiosk_photo(discord_id: str, username: str, photo_path: str,
-                    bonuses: str = "") -> int:
-    """Queue a kiosk check-in photo for the bot to post. Returns row id."""
+                    bonuses: str = "", action: str = "in") -> int:
+    """Queue a kiosk photo for the bot to post. Returns row id.
+
+    action is "in" or "out", so the post can say which one happened.
+    """
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO kiosk_photos (discord_id, username, photo_path, bonuses)
-        VALUES (?, ?, ?, ?)
-    """, (discord_id, username, photo_path, bonuses))
+        INSERT INTO kiosk_photos (discord_id, username, photo_path, bonuses, action)
+        VALUES (?, ?, ?, ?, ?)
+    """, (discord_id, username, photo_path, bonuses, action))
     row_id = cursor.lastrowid
     conn.commit()
     conn.close()
     return row_id
+
+
+def add_checkin_event(discord_id: str, username: str, action: str,
+                      credits: int = 0, bonuses: str = "",
+                      photo: bytes | None = None, keep: int = 60) -> int:
+    """Record a check-in/out for the lab timeline. Returns the row id.
+
+    The thumbnail lives here rather than on disk because the bot deletes
+    the full photo once it has posted it to Discord (cogs/kiosk_feed.py),
+    and the timeline still wants a face afterwards. Only the most recent
+    `keep` events are retained, so this cannot grow without bound.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    # Local time, explicitly: SQLite's CURRENT_TIMESTAMP is UTC, and every
+    # other time in this database (check-in times, bonuses) is local.
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cursor.execute("""
+        INSERT INTO checkin_events
+            (discord_id, username, action, credits, bonuses, photo, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (discord_id, username, action, credits, bonuses, photo, now))
+    row_id = cursor.lastrowid
+    cursor.execute("""
+        DELETE FROM checkin_events WHERE id NOT IN (
+            SELECT id FROM checkin_events ORDER BY id DESC LIMIT ?
+        )
+    """, (keep,))
+    conn.commit()
+    conn.close()
+    return row_id
+
+
+def get_checkin_events(limit: int = 20) -> list:
+    """Recent check-ins/outs, newest first. Photos are reported, not carried."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT id, discord_id, username, action, credits, bonuses, created_at,
+               photo IS NOT NULL AS has_photo
+        FROM checkin_events ORDER BY id DESC LIMIT ?
+    """, (limit,))
+    rows = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return rows
+
+
+def get_checkin_event_photo(event_id: int) -> bytes | None:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT photo FROM checkin_events WHERE id = ?", (event_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row["photo"] if row and row["photo"] else None
 
 
 def get_unposted_kiosk_photos(limit: int = 10) -> list:

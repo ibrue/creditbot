@@ -66,23 +66,27 @@ class KioskFeedCog(commands.Cog):
             except (json.JSONDecodeError, TypeError):
                 bonuses = []
 
-            description = f"<@{photo['discord_id']}> just checked in at the kiosk!"
+            # Departures are photographed too, so say which one happened.
+            leaving = (photo["action"] if "action" in photo.keys() else "in") == "out"
+            verb = "just checked out of" if leaving else "just checked in at"
+            description = f"<@{photo['discord_id']}> {verb} the kiosk!"
             if photo_caption:
                 description += f"\n\n🤖 *“{photo_caption}”*"
             if bonuses:
                 description += "\n\n" + "\n".join(bonuses)
 
             embed = discord.Embed(
-                title="📸 Kiosk Check-In",
+                title="👋 Kiosk Check-Out" if leaving else "📸 Kiosk Check-In",
                 description=description,
-                color=discord.Color.green(),
+                color=discord.Color.orange() if leaving else discord.Color.green(),
             )
-            embed.set_image(url="attachment://checkin.jpg")
+            filename = "checkout.jpg" if leaving else "checkin.jpg"
+            embed.set_image(url=f"attachment://{filename}")
 
             try:
                 await channel.send(
                     embed=embed,
-                    file=discord.File(path, filename="checkin.jpg"),
+                    file=discord.File(path, filename=filename),
                 )
             except Exception as e:
                 print(f"⚠️ Could not post kiosk photo (will retry): {e}")

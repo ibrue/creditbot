@@ -107,7 +107,8 @@ Once the containers are up, three pages are served:
 | Page | Who it's for | How sign-in works |
 |---|---|---|
 | `http://<nas-ip>:8765/app` | everyone's phones/laptops | lab password, then **face login** at the webcam (or pick your name from the list) |
-| `http://<nas-ip>:8765/app/station` | the shared lab desktop | lab password only — the machine signs in as one shared station account (`WEB_STATION_NAME`, default "Lab Computer"), no picker |
+| `http://<nas-ip>:8765/app/kiosk` | the shared lab desktop | lab password arms the terminal once; each action then identifies the person at the camera and credits them |
+| `http://<nas-ip>:8765/app/enroll` | newcomers | no password — register a name and a face. Refused over Tailscale Funnel, so it stays a lab-network door |
 | `http://<nas-ip>:8765/app/admin` | whoever runs the lab | `WEB_ADMIN_PASSWORD` (falls back to the lab password) — Discord setup GUI + a live server terminal |
 
 Face login uses the same YuNet/SFace models as the kiosk, matched against
@@ -142,7 +143,7 @@ nano .env                                  # WEB_STATION_ID=... , WEB_STATION_NA
 ```
 
 Then let the updater deploy normally (or `git pull && docker compose up
--d --build api` by hand) and bookmark `/app/station` on the desktop.
+-d --build api` by hand) and bookmark `/app/kiosk` on the desktop.
 
 Open **`http://<nas-ip>:8765/app`** from any computer or phone on the
 network.
@@ -161,8 +162,8 @@ python -c "import secrets; print(secrets.token_urlsafe(18))"
 | `WEB_HTTPS` | `0` | `1` when reached over HTTPS, so cookies are marked Secure. |
 | `WEB_TRUST_PROXY` | `0` | `1` only if a reverse proxy you control sets `X-Forwarded-For`. Left at `0`, the header is ignored so nobody can reset their own rate limit. |
 | `WEB_SECRET` | *(generated)* | Signing key for session cookies. Generated and kept beside the database if unset. |
-| `WEB_STATION_ID` | `station` | The account `/app/station` signs in as. Point it at an existing member's discord_id to reuse an account. |
-| `WEB_STATION_NAME` | `Lab Computer` | Display name for the station account. |
+| `WEB_ENROLL_PUBLIC` | `0` | `1` allows self-enrolment at `/app/enroll` from the public internet too. Left at `0`, only the lab network can register a face. |
+| `WEB_STATION_ID` / `WEB_STATION_NAME` | `station` / `Lab Computer` | Deprecated with the station page. Kept so an existing shared account still resolves. |
 | `WEB_ADMIN_PASSWORD` | *(unset)* | Password for `/app/admin`. Unset = the lab password also opens the admin page. |
 
 **One shared password means one shared identity.** Anyone who knows it can

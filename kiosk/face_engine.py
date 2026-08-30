@@ -34,10 +34,15 @@ class FaceEngine:
         )
         self.recognizer = cv2.FaceRecognizerSF_create(RECOGNIZE_MODEL, "")
 
-    def detect_best_face(self, frame_bgr):
+    def detect_best_face(self, frame_bgr, min_size: int = MIN_FACE_SIZE):
         """Detect the largest face in the frame.
 
         Returns the raw face row (box + landmarks + score) or None.
+
+        min_size defaults to the size we are willing to recognize. Pass 0
+        to see faces we would otherwise discard — the web kiosk does that
+        so it can zoom toward a face that is merely too far away, instead
+        of reporting nothing and having nowhere to aim.
         """
         h, w = frame_bgr.shape[:2]
         self.detector.setInputSize((w, h))
@@ -47,7 +52,7 @@ class FaceEngine:
 
         # Pick the largest face
         best = max(faces, key=lambda f: f[2] * f[3])
-        if best[2] < MIN_FACE_SIZE or best[3] < MIN_FACE_SIZE:
+        if best[2] < min_size or best[3] < min_size:
             return None
         return best
 
