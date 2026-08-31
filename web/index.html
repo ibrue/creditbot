@@ -362,6 +362,49 @@
     <div class="footnote"><span>creditbot · the System sees all</span></div>
   </section>
 
+  <!-- ---------------- Diagnostics (admin) ---------------- -->
+  <section id="diag-view" class="hidden">
+    <h1>Diagnostics<span class="hl">.</span></h1>
+    <p class="sub">What this terminal sees, and what the server thinks.</p>
+
+    <div id="diag-msg" class="msg" style="margin-top:16px"></div>
+
+    <div class="block" style="margin-top:16px">
+      <div class="block-head">Camera <small>this machine only</small></div>
+      <div class="block-body">
+        <label for="cam-select">Which camera this terminal uses</label>
+        <select id="cam-select"></select>
+        <p class="hint" id="cam-hint"></p>
+        <div class="row" style="margin-top:12px">
+          <button class="ghost" id="cam-clear">Use the default camera</button>
+          <button class="ghost" id="cam-test">Test recognition</button>
+        </div>
+        <div id="diag-face-slot" style="margin-top:14px"></div>
+      </div>
+    </div>
+
+    <div class="block">
+      <div class="block-head">Server default <small>applies to every terminal</small></div>
+      <div class="block-body">
+        <label for="cam-pref">Preferred camera, by name</label>
+        <input id="cam-pref" type="text" maxlength="100" autocomplete="off"
+               placeholder="e.g. BRIO — a new terminal picks the first match">
+        <button id="cam-pref-save" style="margin-top:12px">Save server default</button>
+        <p class="hint">A terminal's own choice above always wins over this.</p>
+      </div>
+    </div>
+
+    <div class="block">
+      <div class="block-head">The System <small>server-side facts</small></div>
+      <div class="block-body"><ul id="diag-server"></ul></div>
+    </div>
+
+    <div class="footnote">
+      <span>creditbot · the System sees all</span>
+      <a class="quiet" href="../admin">Back to admin</a>
+    </div>
+  </section>
+
   <!-- ---------------- Kiosk (walk-up terminal) ---------------- -->
   <section id="kiosk-view" class="hidden">
 
@@ -459,6 +502,7 @@
       <span>creditbot · the System sees all</span>
       <span>
         <a class="quiet" href="admin">Admin</a>
+        <a class="quiet" href="admin/diagnostics" style="margin-left:14px">Diagnostics</a>
         <a class="quiet" id="k-endsession" href="#" style="margin-left:14px">End session</a>
       </span>
     </div>
@@ -471,7 +515,7 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
 const views = { login: $("login-view"), kiosk: $("kiosk-view"),
-                enroll: $("enroll-view") };
+                enroll: $("enroll-view"), diag: $("diag-view") };
 
 // The same page serves /app (multi-user) and /app/station (the shared
 // desktop): station mode signs straight in as the station account.
@@ -481,11 +525,18 @@ const views = { login: $("login-view"), kiosk: $("kiosk-view"),
 // The deployment is the terminal: /app and /app/kiosk are the same screen.
 // Registration is the only other page a member sees.
 const ENROLL_PATH = /\/enroll\/?$/.test(location.pathname);
-const KIOSK = !ENROLL_PATH;
+const DIAG_PATH = /\/diagnostics\/?$/.test(location.pathname);
+const KIOSK = !ENROLL_PATH && !DIAG_PATH;
 // /app/enroll needs no password at all: a newcomer walks up to the lab
 // terminal and registers themselves. The server refuses it from the
 // public internet, so this stays a lab-network door.
 const ENROLL = ENROLL_PATH;
+const DIAG = DIAG_PATH;
+if (DIAG) {
+  document.title = "Diagnostics";
+  document.body.classList.add("kiosk");
+  $("sys-name").innerHTML = "CREDITBOT<em>*</em> DIAGNOSTICS";
+}
 if (ENROLL) {
   document.title = "Enrol";
   document.body.classList.add("kiosk");
@@ -502,8 +553,8 @@ if (KIOSK) {
 // The camera card is shared between the picker and the kiosk; park it in
 // whichever slot is on screen so there is only ever one <video> element.
 function faceHome(where) {
-  const slot = { kpick: "k-pick-face-slot", enroll: "enroll-face-slot" }[where]
-                || "kiosk-face-slot";
+  const slot = { kpick: "k-pick-face-slot", enroll: "enroll-face-slot",
+                 diag: "diag-face-slot" }[where] || "kiosk-face-slot";
   const card = $("face-card");
   if (card.parentElement === $(slot)) return;
   $(slot).append(card);
@@ -800,6 +851,45 @@ function renderDiag(r, zoom) {
 }
 
 // ---- camera lifecycle ----
+const CAMERA_KEY = "creditbot.cameraId";
+let cameraPreference = "";      // server default: a substring of the label
+let cameras = [];               // videoinput devices, once permission allows
+
+function storedCameraId() {
+  try { return localStorage.getItem(CAMERA_KEY) || ""; } catch { return ""; }
+}
+function storeCameraId(id) {
+  try { id ? localStorage.setItem(CAMERA_KEY, id) : localStorage.removeItem(CAMERA_KEY); }
+  catch { /* private browsing: the choice just will not stick */ }
+}
+
+async function listCameras() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return [];
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  cameras = devices.filter((d) => d.kind === "videoinput");
+  return cameras;
+}
+
+// This machine's own choice wins; otherwise the label the server prefers;
+// otherwise whatever the browser hands us.
+function chooseCamera() {
+  const stored = storedCameraId();
+  if (stored) return stored;
+  if (cameraPreference) {
+    const needle = cameraPreference.toLowerCase();
+    const hit = cameras.find((c) => (c.label || "").toLowerCase().includes(needle));
+    if (hit) return hit.deviceId;
+  }
+  return "";
+}
+
+function cameraConstraints(deviceId) {
+  const video = { width: { ideal: 1280 }, height: { ideal: 720 } };
+  if (deviceId) video.deviceId = { exact: deviceId };
+  else video.facingMode = "user";
+  return { video, audio: false };
+}
+
 async function startFace({ identify = true } = {}) {
   recognize = identify;
   if (faceStream) return;
@@ -818,14 +908,26 @@ async function startFace({ identify = true } = {}) {
     return;
   }
   try {
-    faceStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
-      audio: false,
-    });
-  } catch {
-    faceSay("Camera blocked or missing — pick your name below.");
-    return;
+    await listCameras();
+    faceStream = await navigator.mediaDevices.getUserMedia(cameraConstraints(chooseCamera()));
+  } catch (err) {
+    // The chosen camera may have been unplugged since it was picked.
+    if (err && (err.name === "OverconstrainedError" || err.name === "NotFoundError")
+        && storedCameraId()) {
+      storeCameraId("");
+      try {
+        faceStream = await navigator.mediaDevices.getUserMedia(cameraConstraints(""));
+        faceSay("That camera is gone — fell back to the default one.");
+      } catch {
+        faceSay("Camera blocked or missing — pick your name below.");
+        return;
+      }
+    } else {
+      faceSay("Camera blocked or missing — pick your name below.");
+      return;
+    }
   }
+  await listCameras();   // labels are only exposed once permission is granted
   $("face-video").classList.remove("hidden");
   $("face-video").srcObject = faceStream;
   roi = null; noFaceRuns = 0; lastRecognizeAt = 0;
@@ -1458,6 +1560,151 @@ $("e-done-idle").addEventListener("click", () => {
   if (KIOSK) kioskIdle(); else show("login");
 });
 
+// ---------- diagnostics (admin) ----------
+// The camera a terminal uses is a property of that machine, so the choice
+// lives in its own browser. The server only holds a preferred name, which a
+// freshly set-up terminal falls back to.
+function fact(list, label, value, good) {
+  const li = document.createElement("li");
+  const k = document.createElement("span"); k.textContent = label;
+  const v = document.createElement("span");
+  v.className = "meta";
+  v.textContent = value;
+  if (good === true) v.style.color = "var(--ok)";
+  if (good === false) v.style.color = "var(--warn)";
+  li.append(k, v);
+  list.append(li);
+}
+
+function renderCameraList() {
+  const sel = $("cam-select");
+  const chosen = storedCameraId();
+  sel.innerHTML = "";
+  if (!cameras.length) {
+    sel.innerHTML = '<option value="">No cameras found</option>';
+    return;
+  }
+  const auto = document.createElement("option");
+  auto.value = ""; auto.textContent = "Automatic (server default, then browser)";
+  sel.append(auto);
+  cameras.forEach((c, i) => {
+    const o = document.createElement("option");
+    o.value = c.deviceId;
+    o.textContent = c.label || `Camera ${i + 1} (allow the camera to see its name)`;
+    if (c.deviceId === chosen) o.selected = true;
+    sel.append(o);
+  });
+  const unnamed = cameras.some((c) => !c.label);
+  $("cam-hint").textContent = unnamed
+    ? "Camera names appear once this machine has allowed the camera once."
+    : `${cameras.length} camera(s) on this machine. The choice is remembered here only.`;
+}
+
+async function renderServerFacts() {
+  const list = $("diag-server");
+  list.innerHTML = "";
+  let d;
+  try {
+    d = await api("/admin/diagnostics");
+  } catch (err) {
+    say($("diag-msg"), err.message + " — sign in on the admin page first.", "err");
+    return;
+  }
+  say($("diag-msg"), "");
+  cameraPreference = d.settings.kiosk_camera || "";
+  $("cam-pref").value = cameraPreference;
+
+  fact(list, "Face models loaded", d.face.models_loaded ? "yes" : "NO", d.face.models_loaded);
+  fact(list, "People enrolled", String(d.face.enrolled_people), d.face.enrolled_people > 0);
+  fact(list, "Face samples on file", String(d.face.face_samples));
+  fact(list, "Members", String(d.counts.members));
+  fact(list, "Timeline events", String(d.counts.timeline_events));
+  fact(list, "Photos queued for Discord", String(d.counts.photos_queued_for_discord));
+
+  const dc = d.discord;
+  fact(list, "Discord bot", dc.connected ? (dc.bot || "connected") : (dc.detail || "not connected"), dc.connected);
+  if (dc.guild) fact(list, "Server", dc.guild, true);
+  for (const [label, name] of Object.entries(dc.channels || {})) {
+    fact(list, `Channel: ${label}`, name, !String(name).startsWith("unreachable"));
+  }
+
+  const st = d.settings;
+  fact(list, "Posts photos to Discord", st.posts_photos_to_discord ? "yes" : "no");
+  fact(list, "Cookies marked Secure", st.web_https ? "yes" : "no");
+  fact(list, "Trusts X-Forwarded-For", st.web_trust_proxy ? "yes" : "no");
+  fact(list, "Enrolment open to internet", st.enrolment_open_to_internet ? "YES" : "no",
+       !st.enrolment_open_to_internet);
+  fact(list, "Admin password separate", st.admin_password_separate ? "yes" : "NO",
+       st.admin_password_separate);
+  fact(list, "Kiosk API key set", st.kiosk_api_key_set ? "yes" : "NO", st.kiosk_api_key_set);
+  fact(list, "Timezone", st.timezone);
+  fact(list, "Browser secure context", window.isSecureContext ? "yes" : "NO (camera blocked)",
+       window.isSecureContext);
+}
+
+async function startDiagnostics() {
+  show("diag");
+  faceHome("diag");
+  await renderServerFacts();
+  await startFace({ identify: false });   // preview only: locate, do not identify
+  await listCameras();
+  renderCameraList();
+  const video = $("face-video");
+  if (video.videoWidth) {
+    fact($("diag-server"), "Negotiated resolution",
+         `${video.videoWidth}x${video.videoHeight}`);
+  }
+}
+
+$("cam-select").addEventListener("change", async () => {
+  storeCameraId($("cam-select").value);
+  stopFace();
+  await startFace({ identify: false });
+  renderCameraList();
+});
+
+$("cam-clear").addEventListener("click", async () => {
+  storeCameraId("");
+  stopFace();
+  await startFace({ identify: false });
+  renderCameraList();
+});
+
+$("cam-test").addEventListener("click", async () => {
+  say($("diag-msg"), "");
+  const sent = grabFrame(0.8);
+  if (!sent) { say($("diag-msg"), "No camera frame to test.", "err"); return; }
+  try {
+    const r = await api("/face-scan", { method: "POST", body: JSON.stringify({ image_b64: sent.b64 }) });
+    if (r.match) {
+      say($("diag-msg"),
+          `Recognized ${r.match.name} at ${r.match.score.toFixed(3)} (needs ${r.threshold}).`, "ok");
+    } else if (r.best_score != null) {
+      say($("diag-msg"),
+          `No match. Closest was ${r.best_score.toFixed(3)}, needs ${r.threshold}.`, "warn");
+    } else {
+      say($("diag-msg"), r.detail || "No face in view.", "warn");
+    }
+  } catch (err) {
+    say($("diag-msg"), err.message, "err");
+  }
+});
+
+$("cam-pref-save").addEventListener("click", async () => {
+  try {
+    const res = await fetch("/app/api/admin/config", {
+      method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kiosk_camera: $("cam-pref").value.trim() }),
+    });
+    if (!res.ok) throw new Error("Could not save — admin sign-in needed.");
+    cameraPreference = $("cam-pref").value.trim();
+    say($("diag-msg"), "Server default saved.", "ok");
+  } catch (err) {
+    say($("diag-msg"), err.message, "err");
+  }
+});
+
 // ---------- shared wording ----------
 function describeResult(result, who) {
   const tag = who ? who + " — " : "";
@@ -1495,7 +1742,9 @@ setInterval(() => {
   if (KIOSK && !kioskAction && !views.kiosk.classList.contains("hidden")) loadKioskLists();
 }, 60000);
 
-if (ENROLL) startEnroll(); else refresh();
+if (ENROLL) startEnroll();
+else if (DIAG) startDiagnostics();
+else refresh();
 </script>
 </body>
 </html>

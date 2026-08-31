@@ -19,6 +19,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 import config
+import database
+import discord_lookup
 import web_auth
 import web_face
 import webapp
@@ -54,6 +56,20 @@ def admin_page():
     if not os.path.exists(ADMIN_FILE):
         raise HTTPException(status_code=500, detail="Admin page files are missing")
     return FileResponse(ADMIN_FILE, media_type="text/html")
+
+
+@router.get("/admin/diagnostics", include_in_schema=False)
+def diagnostics_page():
+    """The camera picker and the health readout.
+
+    Served from the kiosk page rather than this one: that page already owns
+    the whole camera pipeline (capture, auto-zoom, the overlay, the live
+    scan readout), and a second copy would drift from it. Reading anything
+    still needs an admin session — see /api/admin/diagnostics.
+    """
+    if not webapp.WEB_ENABLED:
+        raise HTTPException(status_code=404, detail="Web client is disabled")
+    return webapp.index()
 
 
 # ----------------------------------------------------------- admin login
@@ -116,6 +132,7 @@ def get_config(creditbot_session: str | None = Cookie(default=None)):
             "memes_channel_id": str(config.MEMES_CHANNEL_ID or ""),
             "notebooking_channel_id": str(config.NOTEBOOKING_CHANNEL_ID or ""),
         },
+        "kiosk_camera": config.KIOSK_CAMERA,
         "face_login_available": web_face.available(),
         "station": {"id": webapp.WEB_STATION_ID,
                     "name": webapp.WEB_STATION_NAME},
@@ -131,6 +148,8 @@ class SaveConfigRequest(BaseModel):
     announcements_channel_id: str | None = Field(default=None, max_length=32)
     memes_channel_id: str | None = Field(default=None, max_length=32)
     notebooking_channel_id: str | None = Field(default=None, max_length=32)
+    # Substring of the webcam label a terminal should prefer, e.g. "BRIO".
+    kiosk_camera: str | None = Field(default=None, max_length=100)
 
 
 @router.post("/api/admin/config")
@@ -153,6 +172,9 @@ def save_config(req: SaveConfigRequest,
     updates = dict(numeric)
     if req.discord_token is not None:
         updates["DISCORD_TOKEN"] = req.discord_token
+    # A camera is chosen by name, not by a Discord id, so it skips the check above.
+    if req.kiosk_camera is not None:
+        updates["KIOSK_CAMERA"] = req.kiosk_camera
     config.save_settings(updates)
     print("⚙️ Admin page saved Discord settings")
     return {
@@ -236,6 +258,71 @@ def discord_channels(req: ChannelsRequest,
 
 
 # --------------------------------------------------------------- terminal
+
+@router.get("/api/admin/diagnostics")
+def diagnostics(creditbot_session: str | None = Cookie(default=None)):
+    """Everything worth knowing when the kiosk is misbehaving.
+
+    All of it is already computed somewhere; it is just never surfaced.
+    Secrets are reported as booleans, never values.
+    """
+    require_admin(creditbot_session)
+
+    faces = database.get_face_encodings()
+    enrolled = {str(f["discord_id"]) for f in faces}
+
+    discord_state = {"connected": False, "bot": None, "guild": None,
+                     "channels": {}, "detail": None}
+    if not discord_lookup.token_configured():
+        discord_state["detail"] = "No bot token configured."
+    else:
+        try:
+            me = discord_lookup._get("/users/@me")
+            discord_state["bot"] = me.get("username")
+            discord_state["connected"] = True
+            if config.GUILD_ID:
+                guild = discord_lookup._get(f"/guilds/{config.GUILD_ID}")
+                discord_state["guild"] = guild.get("name")
+            for label, cid in (("check-in", config.CHECKIN_CHANNEL_ID),
+                               ("announcements", config.ANNOUNCEMENTS_CHANNEL_ID),
+                               ("memes", config.MEMES_CHANNEL_ID),
+                               ("notebooking", config.NOTEBOOKING_CHANNEL_ID)):
+                if not cid:
+                    continue
+                try:
+                    ch = discord_lookup._get(f"/channels/{cid}")
+                    discord_state["channels"][label] = "#" + ch.get("name", "?")
+                except discord_lookup.DiscordUnavailable as e:
+                    discord_state["channels"][label] = f"unreachable — {e}"
+        except discord_lookup.DiscordUnavailable as e:
+            discord_state["detail"] = str(e)
+
+    return {
+        "face": {
+            "models_loaded": web_face.available(),
+            "enrolled_people": len(enrolled),
+            "face_samples": len(faces),
+        },
+        "counts": {
+            "members": len(database.get_all_users()),
+            "timeline_events": len(database.get_checkin_events(limit=50)),
+            "photos_queued_for_discord": len(database.get_unposted_kiosk_photos(limit=50)),
+        },
+        "discord": discord_state,
+        "settings": {
+            "kiosk_camera": config.KIOSK_CAMERA,
+            "web_https": webapp.WEB_HTTPS,
+            "web_trust_proxy": webapp.WEB_TRUST_PROXY,
+            "enrolment_open_to_internet": webapp.WEB_ENROLL_PUBLIC,
+            "posts_photos_to_discord": config.KIOSK_POST_PHOTOS,
+            "timezone": os.getenv("TZ", "unset"),
+            "lab_password_set": bool(webapp.WEB_PASSWORD),
+            "admin_password_separate": bool(WEB_ADMIN_PASSWORD)
+                                       and WEB_ADMIN_PASSWORD != webapp.WEB_PASSWORD,
+            "kiosk_api_key_set": bool(os.getenv("KIOSK_API_KEY", "")),
+        },
+    }
+
 
 @router.get("/api/admin/logs")
 def logs(since: int = 0,

@@ -79,12 +79,14 @@ def save_settings(updates: dict):
 def _apply_settings():
     global DISCORD_TOKEN, GUILD_ID, CHECKIN_CHANNEL_ID
     global ANNOUNCEMENTS_CHANNEL_ID, MEMES_CHANNEL_ID, NOTEBOOKING_CHANNEL_ID
+    global KIOSK_CAMERA
     DISCORD_TOKEN = setting("DISCORD_TOKEN", "your-bot-token-here")
     GUILD_ID = _int_setting("GUILD_ID")
     CHECKIN_CHANNEL_ID = _int_setting("CHECKIN_CHANNEL_ID")
     ANNOUNCEMENTS_CHANNEL_ID = _int_setting("ANNOUNCEMENTS_CHANNEL_ID")
     MEMES_CHANNEL_ID = _int_setting("MEMES_CHANNEL_ID")
     NOTEBOOKING_CHANNEL_ID = _int_setting("NOTEBOOKING_CHANNEL_ID")
+    KIOSK_CAMERA = setting("KIOSK_CAMERA", "")
 
 
 # Discord Bot Token - Get this from https://discord.com/developers/applications
@@ -98,6 +100,12 @@ CHECKIN_CHANNEL_ID = _int_setting("CHECKIN_CHANNEL_ID")
 ANNOUNCEMENTS_CHANNEL_ID = _int_setting("ANNOUNCEMENTS_CHANNEL_ID")
 MEMES_CHANNEL_ID = _int_setting("MEMES_CHANNEL_ID")  # Optional
 NOTEBOOKING_CHANNEL_ID = _int_setting("NOTEBOOKING_CHANNEL_ID")  # Auto documentation credits
+
+# Which webcam a terminal should prefer, as a substring of the device label
+# (e.g. "BRIO"). A machine with several cameras otherwise gets whichever one
+# the browser picks, which on a wall-mounted kiosk is usually the built-in one
+# pointing at the ceiling. A terminal can override this locally in the browser.
+KIOSK_CAMERA = setting("KIOSK_CAMERA", "")
 
 # Database
 DATABASE_PATH = expand_path(os.getenv("DATABASE_PATH", "social_credit.db"))
