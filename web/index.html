@@ -582,6 +582,17 @@ function say(el, text, kind = "ok") {
   el.textContent = text;
   el.className = "msg " + kind + (text ? " show" : "");
 }
+// A terminal runs for weeks, and its session lasts twelve hours. When it
+// lapses, drop back to the password screen rather than showing "Not signed
+// in" on every button press.
+function sessionLost() {
+  if (!KIOSK || !views.login.classList.contains("hidden")) return;
+  try { stopFace(); } catch { /* camera may not be running */ }
+  clearTimeout(kioskTimer); kioskTimer = null;
+  show("login");
+  say($("login-msg"), "This terminal's session expired — sign in to arm it again.", "warn");
+}
+
 async function api(path, options = {}) {
   const res = await fetch("/app/api" + path, {
     credentials: "same-origin",
@@ -590,9 +601,17 @@ async function api(path, options = {}) {
   });
   let body = {};
   try { body = await res.json(); } catch { /* empty body */ }
-  if (!res.ok) throw new Error(body.detail || `Something went wrong (${res.status})`);
+  if (!res.ok) {
+    if (res.status === 401) sessionLost();
+    throw new Error(body.detail || `Something went wrong (${res.status})`);
+  }
   return body;
 }
+
+// Nothing here should fail silently on a screen nobody is watching.
+window.addEventListener("unhandledrejection", (e) => {
+  console.error("Unhandled promise rejection:", e.reason);
+});
 
 // ---------- login ----------
 $("login-form").addEventListener("submit", async (e) => {
@@ -620,6 +639,7 @@ let faceStream = null, scanTimer = null;
 let recognize = true;           // false on the enrol preview: locate, do not identify
 let lastRecognizeAt = 0;
 let lastScanMs = 0;
+let scanFailures = 0;   // consecutive scan errors, for backoff
 
 const SCAN_GAP_MS = 40;         // breathing room between passes
 const RECOG_EVERY_MS = 700;     // how often the expensive pass may run
@@ -930,7 +950,7 @@ async function startFace({ identify = true } = {}) {
   await listCameras();   // labels are only exposed once permission is granted
   $("face-video").classList.remove("hidden");
   $("face-video").srcObject = faceStream;
-  roi = null; noFaceRuns = 0; lastRecognizeAt = 0;
+  roi = null; noFaceRuns = 0; lastRecognizeAt = 0; scanFailures = 0;
   faceSay("Hold still. Scanning…");
   startDrawLoop();
   scanLoop();
@@ -967,11 +987,17 @@ async function scanLoop() {
       if (wantRecog) lastRecognizeAt = Date.now();
       if (await handleScan(r, sent)) return;   // recognized: the loop is over
     }
+    scanFailures = 0;
   } catch (err) {
+    // Back off when the server or network is unhappy, instead of retrying
+    // flat out every 40ms and burying it in requests.
+    scanFailures = Math.min(scanFailures + 1, 6);
     faceSay(err.message);
     targetBox = null; targetMarks = null;
   }
-  if (faceStream) scanTimer = setTimeout(scanLoop, SCAN_GAP_MS);
+  const gap = scanFailures ? Math.min(4000, SCAN_GAP_MS * 2 ** scanFailures)
+                           : SCAN_GAP_MS;
+  if (faceStream) scanTimer = setTimeout(scanLoop, gap);
 }
 
 // Returns true when the scan ended the session (somebody was recognized).

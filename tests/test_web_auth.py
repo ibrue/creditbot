@@ -262,3 +262,46 @@ def test_old_entries_do_not_accumulate():
         limiter.check(f"client-{i}", now=2000.0)
 
     assert limiter._attempts == {}
+
+
+# The site is reachable from the internet, so the set of client addresses is
+# attacker-controlled. The limiter must not grow without bound.
+
+def test_the_limiter_forgets_addresses_that_aged_out():
+    limiter = web_auth.LoginLimiter(max_attempts=3, window_seconds=100)
+    for i in range(500):
+        limiter.record_failure(f"10.0.0.{i}", now=1000.0)
+    assert len(limiter._attempts) == 500
+
+    # Long after the window, one more attempt sweeps the stale ones away.
+    limiter.record_failure("10.0.0.999", now=1000.0 + 500)
+    assert len(limiter._attempts) == 1
+
+
+def test_the_limiter_is_hard_capped_against_a_spray():
+    limiter = web_auth.LoginLimiter(max_attempts=3, window_seconds=100)
+    limiter.MAX_KEYS = 50
+    # Every address stays inside the window, so ageing out cannot save us.
+    for i in range(400):
+        limiter.record_failure(f"10.0.0.{i}", now=1000.0 + i * 0.1)
+    limiter.record_failure("10.0.1.1", now=1000.0 + 200)
+    assert len(limiter._attempts) <= limiter.MAX_KEYS
+
+
+def test_a_capped_sweep_keeps_the_most_recent_offenders():
+    limiter = web_auth.LoginLimiter(max_attempts=3, window_seconds=100)
+    limiter.MAX_KEYS = 2
+    limiter.record_failure("old", now=1000.0)
+    limiter.record_failure("newer", now=1001.0)
+    limiter.record_failure("newest", now=1002.0)
+    limiter._sweep(1003.0)
+    assert "newest" in limiter._attempts
+    assert "old" not in limiter._attempts
+
+
+def test_limiting_still_works_after_a_sweep():
+    limiter = web_auth.LoginLimiter(max_attempts=2, window_seconds=100)
+    for _ in range(2):
+        limiter.record_failure("10.0.0.1", now=2000.0)
+    allowed, retry = limiter.check("10.0.0.1", now=2000.0)
+    assert allowed is False and retry > 0

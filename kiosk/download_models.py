@@ -23,8 +23,17 @@ for filename, url in MODELS.items():
         continue
     print(f"Downloading {filename} ...")
     request = urllib.request.Request(url, headers={"User-Agent": "creditbot-kiosk"})
-    with urllib.request.urlopen(request) as response, open(dest, "wb") as f:
-        f.write(response.read())
+    # Without a timeout a stalled connection hangs first-run setup forever,
+    # with no output and nothing to interrupt but Ctrl-C.
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response, open(dest, "wb") as f:
+            f.write(response.read())
+    except Exception as e:
+        if os.path.exists(dest):
+            os.remove(dest)          # never leave a half-written model behind
+        raise SystemExit(
+            f"Could not download {filename}: {e}\n"
+            "Check the network and run this again — nothing was left half-written.")
     size = os.path.getsize(dest)
     if size < 100_000:
         os.remove(dest)

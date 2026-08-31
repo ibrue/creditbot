@@ -134,11 +134,31 @@ class LoginLimiter:
     tool: it needs no dependency, and the server runs as a single process.
     """
 
+    # The site is reachable from the internet, so the number of distinct
+    # client addresses is attacker-controlled. Keys are swept on a timer and
+    # hard-capped, so a spray from many addresses cannot grow this forever.
+    MAX_KEYS = 4096
+
     def __init__(self, max_attempts: int = MAX_ATTEMPTS,
                  window_seconds: int = WINDOW_SECONDS):
         self.max_attempts = max_attempts
         self.window_seconds = window_seconds
         self._attempts: dict[str, list[float]] = {}
+        self._last_sweep = 0.0
+
+    def _sweep(self, now: float):
+        """Drop keys whose attempts have all aged out."""
+        cutoff = now - self.window_seconds
+        self._attempts = {k: [t for t in v if t > cutoff]
+                          for k, v in self._attempts.items()}
+        self._attempts = {k: v for k, v in self._attempts.items() if v}
+        if len(self._attempts) > self.MAX_KEYS:
+            # Still too many: keep the most recent offenders. Dropping a key
+            # only forgives attempts, and the survivors are the active ones.
+            newest = sorted(self._attempts.items(), key=lambda kv: kv[1][-1],
+                            reverse=True)[:self.MAX_KEYS]
+            self._attempts = dict(newest)
+        self._last_sweep = now
 
     def _recent(self, key: str, now: float) -> list:
         cutoff = now - self.window_seconds
@@ -160,6 +180,8 @@ class LoginLimiter:
 
     def record_failure(self, key: str, now: float | None = None):
         now = time.time() if now is None else now
+        if now - self._last_sweep > self.window_seconds:
+            self._sweep(now)
         self._recent(key, now)
         self._attempts.setdefault(key, []).append(now)
 
