@@ -1,68 +1,132 @@
 # Robotics Social Credit System
 
-A fun Discord bot for tracking "social credit" in your robotics lab/team. Members earn points through lab time and positive community behaviors.
+A Discord bot and a face-recognition check-in terminal for a robotics lab.
+Members earn "social credit" for lab time and for helping each other, and a
+computer by the door recognises them and checks them in without anyone typing
+anything.
 
-## Features
+Everything runs on your own hardware. Face recognition happens locally — the
+server stores 128-number embeddings, not photographs of people's faces.
 
-- **Reaction-based check-ins**: React to daily messages to track lab time
-- **Lab time credits**: Earn 1 credit per 30 minutes
-- **Bonus credits**: First arrival, night owl, weekend warrior, streaks
-- **Thank system**: `/thank @user` to give credits for helping
-- **Weekly leaderboard**: Automatic Sunday announcements with awards
-- **Fun penalties**: Magic smoke votes, roast reactions
+## What you get
 
-## Quick Start
+- **A Discord bot** — slash commands, a daily check-in post, a weekly
+  leaderboard with awards, and automatic check-out for people who forget.
+- **A walk-up terminal** at `http://<server>:8765/app` — press *Check in*, look
+  at the camera, and it credits *you*. Returns to idle for the next person.
+- **Self-registration** at `/app/enroll` — a newcomer types their name, picks
+  their Discord account, and looks at the camera. No password, no admin needed.
+- **A lab timeline** on the terminal showing who came and went, with the photo
+  the camera took.
+- **A browser admin page** at `/app/admin` — connect Discord by pasting a token
+  and picking your server and channels from dropdowns. No config files.
+- **A diagnostics page** at `/app/admin/diagnostics` — which camera is in use,
+  whether the models loaded, who is enrolled, and a recognition test that
+  reports the actual match score.
 
-### 1. Create a Discord Bot
+## Quick start
 
-1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
-2. Click "New Application" and give it a name
-3. Go to "Bot" section → Click "Add Bot"
-4. Copy the **Bot Token** (you'll need this)
-5. Enable these Privileged Gateway Intents:
-   - MESSAGE CONTENT INTENT
-   - SERVER MEMBERS INTENT
+You need: a machine that runs Docker (a NAS, a spare PC, a Raspberry Pi), and a
+Discord account. About fifteen minutes.
 
-### 2. Invite the Bot to Your Server
+### 1. Create the Discord bot
 
-1. Go to OAuth2 → URL Generator
-2. Select scopes: `bot`, `applications.commands`
-3. Select permissions:
-   - Send Messages
-   - Add Reactions
-   - Read Message History
-   - Use Slash Commands
-   - Embed Links
-4. Copy the generated URL and open it to invite the bot
+1. Go to the [Discord Developer Portal](https://discord.com/developers/applications)
+   → **New Application**.
+2. **Bot** → **Reset Token** → copy it. You will paste it into a web page in a
+   moment; it never needs to go into a file.
+3. On the same page enable both privileged intents:
+   **MESSAGE CONTENT INTENT** and **SERVER MEMBERS INTENT**.
+   The second is what lets people pick their own Discord account when registering.
+4. **OAuth2 → URL Generator** → scopes `bot` and `applications.commands`, then
+   permissions: Send Messages, Add Reactions, Read Message History, Embed Links,
+   Attach Files. Open the generated URL and invite the bot to your server.
 
-### 3. Get Channel IDs
-
-1. In Discord, go to User Settings → App Settings → Advanced
-2. Enable "Developer Mode"
-3. Right-click your check-ins channel → "Copy ID"
-
-### 4. Configure the Bot
-
-Create a `.env` file in the project folder:
-
-```env
-DISCORD_TOKEN=your-bot-token-here
-CHECKIN_CHANNEL_ID=123456789012345678
-ANNOUNCEMENTS_CHANNEL_ID=123456789012345678
-MEMES_CHANNEL_ID=123456789012345678
-```
-
-Or edit `config.py` directly.
-
-### 5. Install and Run
+### 2. Start the server
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Run the bot
-python bot.py
+git clone https://github.com/ibrue/creditbot.git
+cd creditbot
+cp .env.example .env
 ```
+
+Set just two things in `.env` — everything else can wait:
+
+```env
+WEB_PASSWORD=           # the shared lab password, for the terminal
+KIOSK_API_KEY=          # any long random string, only if you use the physical kiosk
+```
+
+Generate a decent password with:
+
+```bash
+python3 -c "import secrets; print(secrets.token_urlsafe(18))"
+```
+
+Then:
+
+```bash
+docker compose up -d --build
+```
+
+Two containers start: `creditbot` (the Discord bot) and `creditbot-api` (the
+terminal and its API, on port 8765). Check with `curl http://localhost:8765/health`.
+
+*No Docker?* `pip install -r requirements.txt` then `python start_all.py` runs
+both in one process.
+
+### 3. Connect Discord from your browser
+
+Open **`http://<server>:8765/app/admin`** and sign in with `WEB_ADMIN_PASSWORD`
+(or `WEB_PASSWORD` if you have not set a separate one).
+
+Paste the bot token → **Test** → pick your server → pick your channels → **Save**.
+
+That writes to `data/settings_overrides.json`, which overrides `.env`, so you
+never have to hunt for channel IDs by hand. The API applies it immediately; the
+bot picks it up on `docker compose restart bot`.
+
+### 4. Set up the terminal
+
+Open **`http://<server>:8765/app`** on the computer by the door and sign in once
+with the lab password. It stays armed; there is no per-person login.
+
+**The camera needs HTTPS.** Browsers only allow camera access on `https://` or
+`localhost`, so a plain `http://<server-ip>:8765` will not see a webcam. The
+easiest fix is Tailscale (below). On the server itself, `http://localhost:8765`
+works fine.
+
+If the machine has more than one camera, choose which one at
+`/app/admin/diagnostics`. The choice is remembered per machine.
+
+### 5. Get people enrolled
+
+Send everyone to **`http://<server>:8765/app/enroll`** on the terminal. They type
+their name, pick their Discord account, and look at the camera for five frames.
+
+That last part matters: picking the Discord account is what makes credits earned
+at the terminal and credits earned in Discord belong to the same person.
+
+## Reaching it from outside the lab
+
+**Do not port-forward 8765.** Use [Tailscale](https://tailscale.com), which also
+gives you the HTTPS the camera needs:
+
+```bash
+tailscale funnel --bg --https=443 localhost:8765
+```
+
+That publishes `https://<machine>.<tailnet>.ts.net` with a real certificate and
+no open router ports. Then set `WEB_HTTPS=1` and `WEB_TRUST_PROXY=1` in `.env`
+so session cookies are marked Secure and the login rate limiter sees real client
+addresses.
+
+Be aware of what this means: the site is then reachable by anyone who finds the
+URL, protected by one shared password. Choose a long one, and set a **separate**
+`WEB_ADMIN_PASSWORD` — the admin page holds your bot token and a live server log.
+Self-registration is automatically refused for traffic arriving over Funnel, so
+strangers cannot enrol their face under someone else's name; set
+`WEB_ENROLL_PUBLIC=1` only if you actually want that.
 
 ## Commands
 
@@ -77,9 +141,9 @@ python bot.py
 | `/documented [description]` | Log documentation work (+3) |
 | `/magic-smoke @user` | Vote that someone released magic smoke |
 
-## Credit System
+## Credit system
 
-### Earning Credits
+### Earning credits
 
 | Activity | Credits |
 |----------|---------|
@@ -92,7 +156,7 @@ python bot.py
 | Documentation | +3 |
 | Meme post (1x/day) | +1 |
 
-### Losing Credits
+### Losing credits
 
 | Activity | Credits |
 |----------|---------|
@@ -100,115 +164,80 @@ python bot.py
 | Forgot to check out | Session voided (0 earned) |
 | Got roasted (5+ 🔥) | -1 |
 
-## Weekly Awards
+All of it is in `config.py` — credit values, the night-owl hour, the auto-checkout
+window, and when the daily and weekly posts go out.
+
+### Weekly awards
 
 Every Sunday at 6 PM:
-- 🏆 **Supreme Leader** - Highest credits
-- 🥈 **Comrade of the People** - Second place
-- 🥉 **Rising Star** - Third place
-- ⏰ **Lab Rat** - Most lab hours
-- 📈 **Most Improved** - Biggest jump from last week
+- 🏆 **Supreme Leader** — highest credits
+- 🥈 **Comrade of the People** — second place
+- 🥉 **Rising Star** — third place
+- ⏰ **Lab Rat** — most lab hours
+- 📈 **Most Improved** — biggest jump from last week
 
-## Self-Hosting + Facial-Recognition Kiosk
+## Settings
 
-- **One Windows 10/11 PC (easiest):** see [WINDOWS_SETUP.md](WINDOWS_SETUP.md) —
-  double-click **`START.bat`** and it runs the bot, the kiosk API and the
-  check-in kiosk together, installing whatever is missing on the first run.
-- **UGREEN NAS (or any Docker host):** see [NAS_SETUP.md](NAS_SETUP.md) —
-  `docker compose up -d --build` runs the bot plus the kiosk API on
-  port 8765 sharing the same database.
-- **Browser kiosk:** the lab's shared computer opens
-  `http://<server>:8765/app` — the password arms the terminal once, then
-  each press of Check in / Check out recognizes whoever is standing there
-  and credits *them*, returning to idle for the next person. Newcomers
-  register themselves at `/app/enroll`, no password needed.
-  (`/app/station` is retired and redirects here.) Reach it from outside
-  the lab over Tailscale rather than port-forwarding.
-- **Admin from a browser:** `http://<server>:8765/app/admin` hooks the
-  system up to your Discord server with a GUI — paste the bot token, test
-  it, pick the server and channels from dropdowns — and shows a live
-  terminal of what the server is doing.
-- **Check-in kiosk:** see [kiosk/README.md](kiosk/README.md) — a GUI for
-  Windows 10/11 or Linux with big Check In / Check Out buttons that
-  recognizes enrolled members' faces via webcam and checks them in with
-  the same credits and bonuses. Recognized captures are logged locally and
-  the kiosk retunes each member's samples from them automatically, so
-  recognition improves the more the lab uses it.
-- **Automatic updates:** machines installed via `git clone` follow the
-  `main` branch — merge a PR on GitHub and the server and kiosk pull it
-  and restart themselves within ~30 minutes (`AUTO_UPDATE=0` to opt out,
-  `python updater.py` to update on demand).
+Only `WEB_PASSWORD` is really required. Discord settings are better done through
+`/app/admin`, which overrides anything here.
 
-## Cloud Deployment
+| Setting | Default | What it does |
+|---|---|---|
+| `WEB_PASSWORD` | *(unset)* | Shared lab password. Unset means nobody can sign in. |
+| `WEB_ADMIN_PASSWORD` | *(unset)* | Password for `/app/admin`. Unset means the lab password opens it too — set this if the site is public. |
+| `WEB_ENABLED` | `1` | `0` serves no web client; the kiosk API keeps working. |
+| `WEB_HTTPS` | `0` | `1` when reached over HTTPS, so cookies are marked Secure. |
+| `WEB_TRUST_PROXY` | `0` | `1` only behind a proxy you control that sets `X-Forwarded-For`. |
+| `WEB_ENROLL_PUBLIC` | `0` | `1` allows self-registration from the public internet. |
+| `KIOSK_API_KEY` | *(unset)* | Required by the physical kiosk app; unset rejects it. |
+| `KIOSK_CAMERA` | *(unset)* | Preferred webcam, as part of its name (e.g. `BRIO`). Each terminal can override it. |
+| `KIOSK_POST_PHOTOS` | `1` | `0` stops check-in photos being posted to Discord. |
+| `OLLAMA_ENABLED` | `1` | Local-LLM captions on check-in photos. `0` if you have no Ollama. |
+| `DATABASE_PATH` | `social_credit.db` | Docker overrides this to `/data/social_credit.db`. |
+| `TZ` | `America/Chicago` | Bonuses like night-owl use local time. |
+| `AUTO_UPDATE` | `1` | Pull merged changes from GitHub and restart (needs a git clone). |
 
-### Railway (Recommended)
+## The physical kiosk (optional)
 
-1. Push your code to GitHub
-2. Go to [railway.app](https://railway.app)
-3. New Project → Deploy from GitHub repo
-4. Add environment variables in Railway dashboard
-5. Deploy!
+`kiosk/` holds a fullscreen Tkinter app for a dedicated Windows or Linux machine
+with a webcam — the same face models, but native rather than in a browser, so it
+needs no HTTPS. See [kiosk/README.md](kiosk/README.md). Point it at the server
+with `KIOSK_API_URL` and the same `KIOSK_API_KEY`.
 
-### Other Options
+The browser terminal at `/app` does the same job and is easier to set up; the
+native kiosk is worth it for a permanently mounted appliance.
 
-- **Fly.io**: `fly launch` then `fly deploy`
-- **Render**: Connect GitHub, add env vars, deploy
-- **Heroku**: Similar to Railway
-- **VPS/Raspberry Pi**: Run with `screen` or `systemd`
-
-## File Structure
-
-```
-robotics-social-credit/
-├── bot.py              # Main entry point
-├── config.py           # Configuration
-├── database.py         # SQLite database
-├── cogs/
-│   ├── checkin.py      # Check-in reactions
-│   ├── social_credit.py # Credit commands
-│   └── leaderboard.py  # Stats & weekly posts
-├── utils/
-│   └── helpers.py      # Utility functions
-├── requirements.txt
-└── README.md
-```
-
-## Running the Tests
-
-On Windows, double-click **`run_tests.bat`** — it installs what it needs on
-first run. Anywhere else:
+## Running the tests
 
 ```bash
 pip install -r requirements-dev.txt
 pytest
 ```
 
-The suite runs entirely offline against a throwaway SQLite database — it
-never touches your real `social_credit.db`, and it stubs out Discord and
-Ollama, so no bot token or local model is needed.
+The suite runs offline against a throwaway database — it never touches your real
+`social_credit.db`, and it stubs out Discord, the face models, and Ollama, so no
+token or webcam is needed. It also runs on every pull request across Linux and
+Windows on Python 3.10–3.12 (`.github/workflows/tests.yml`).
 
-```
-tests/test_helpers.py        formatting, tiers, streak messages
-tests/test_database.py       credits, check-ins, streaks, votes, audits
-tests/test_checkin_logic.py  kiosk check-in bonuses (matches Discord rules)
-tests/test_api.py            kiosk HTTP API and its authentication
-tests/test_caption.py        local-LLM captions and the safety filter
-tests/test_kiosk_feed.py     posting kiosk photos to Discord, and retries
-tests/test_updater.py        auto-update, and its never-clobber guarantees
-```
+On Windows you can double-click `run_tests.bat`, which installs what it needs.
 
-They also run automatically on every pull request, on Linux and Windows
-across Python 3.10-3.12 (`.github/workflows/tests.yml`).
+## Other ways to run it
 
-## Customization
+- **UGREEN NAS or any Docker host** — [NAS_SETUP.md](NAS_SETUP.md), including an
+  updater that deploys straight from GitHub without git installed on the host.
+- **One Windows PC** — [WINDOWS_SETUP.md](WINDOWS_SETUP.md); double-click
+  `START.bat` and it installs whatever is missing.
+- **Automatic updates** — a clone following `main` pulls merged changes and
+  restarts within ~30 minutes. `AUTO_UPDATE=0` to opt out.
 
-Edit `config.py` to change:
-- Credit values for each activity
-- Night owl hour (default: 8 PM)
-- Auto-checkout time (default: 12 hours)
-- Daily check-in time (default: 8 AM)
-- Weekly announcement day/time
+## Privacy
+
+Enrolment is opt-in and per-person. The server stores face *embeddings* — 128
+numbers — not images. Check-in photos are kept only long enough for the bot to
+post them, plus a small thumbnail for the terminal's timeline, capped to the most
+recent events. Anyone can be removed completely, which deletes their embeddings
+with them.
 
 ## License
 
-MIT - Do whatever you want with it!
+MIT — do whatever you want with it.
