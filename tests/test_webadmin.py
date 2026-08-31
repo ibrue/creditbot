@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 import api
 import config
+import database
 import web_auth
 import webadmin
 import webapp
@@ -198,3 +199,60 @@ def test_prints_reach_the_terminal_feed(admin, db, monkeypatch):
     admin.post("/app/api/checkin")
     lines = admin.get("/app/api/admin/logs?since=0").json()["lines"]
     assert any("Web check-in" in l["line"] for l in lines)
+
+
+# ------------------------------------------------------------ diagnostics
+# The page that answers "which camera is it using, and why did it not
+# recognise me" without anyone having to SSH into the NAS.
+
+def test_diagnostics_page_is_served(admin):
+    response = admin.get("/app/admin/diagnostics")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+
+
+def test_diagnostics_needs_an_admin_session(web):
+    web.cookies.clear()
+    assert web.get("/app/api/admin/diagnostics").status_code == 401
+
+
+def test_a_plain_lab_session_is_not_enough(web):
+    """Signing in with the lab password must not expose the config."""
+    web.post("/app/api/login", json={"password": PASSWORD})
+    assert web.get("/app/api/admin/diagnostics").status_code == 403
+
+
+def test_diagnostics_reports_the_things_that_go_wrong(admin, db, monkeypatch):
+    monkeypatch.setattr(webadmin.web_face, "available", lambda: True)
+    database.get_or_create_user("42", "alice")
+    database.save_face_encoding("42", "alice", "[0.1]")
+
+    body = admin.get("/app/api/admin/diagnostics").json()
+    assert body["face"]["models_loaded"] is True
+    assert body["face"]["enrolled_people"] == 1
+    assert body["face"]["face_samples"] == 1
+    assert body["counts"]["members"] == 1
+    assert "kiosk_camera" in body["settings"]
+    assert "posts_photos_to_discord" in body["settings"]
+    # Secrets are reported as booleans, never values.
+    assert body["settings"]["lab_password_set"] in (True, False)
+    assert "password" not in str(body["settings"].get("lab_password_set"))
+
+
+def test_diagnostics_survives_discord_being_down(admin, db, monkeypatch):
+    monkeypatch.setattr(webadmin.discord_lookup, "token_configured", lambda: True)
+
+    def boom(*_a, **_k):
+        raise webadmin.discord_lookup.DiscordUnavailable("token revoked")
+    monkeypatch.setattr(webadmin.discord_lookup, "_get", boom)
+
+    body = admin.get("/app/api/admin/diagnostics").json()
+    assert body["discord"]["connected"] is False
+    assert "revoked" in body["discord"]["detail"]
+
+
+def test_the_preferred_camera_round_trips(admin, db):
+    assert admin.post("/app/api/admin/config",
+                      json={"kiosk_camera": "BRIO"}).status_code == 200
+    assert config.KIOSK_CAMERA == "BRIO"
+    assert admin.get("/app/api/admin/config").json()["kiosk_camera"] == "BRIO"
