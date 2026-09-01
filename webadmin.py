@@ -31,6 +31,11 @@ TOKEN_PLACEHOLDER = "your-bot-token-here"
 
 WEB_ADMIN_PASSWORD = os.getenv("WEB_ADMIN_PASSWORD", "")
 
+
+def admin_password() -> str:
+    """The admin password, with an admin-page override winning over .env."""
+    return config.setting("WEB_ADMIN_PASSWORD", "") or WEB_ADMIN_PASSWORD
+
 ADMIN_FILE = os.path.join(webapp.WEB_DIR, "admin.html")
 
 router = APIRouter()
@@ -83,7 +88,7 @@ def admin_login(req: AdminLoginRequest, request: Request,
                 creditbot_session: str | None = Cookie(default=None)):
     if not webapp.WEB_ENABLED:
         raise HTTPException(status_code=404, detail="Web client is disabled")
-    expected = WEB_ADMIN_PASSWORD or webapp.WEB_PASSWORD
+    expected = admin_password() or webapp.lab_password()
     if not expected:
         raise HTTPException(
             status_code=503,
@@ -150,6 +155,9 @@ class SaveConfigRequest(BaseModel):
     notebooking_channel_id: str | None = Field(default=None, max_length=32)
     # Substring of the webcam label a terminal should prefer, e.g. "BRIO".
     kiosk_camera: str | None = Field(default=None, max_length=100)
+    # Rotating the door key should not need a shell on the server.
+    lab_password: str | None = Field(default=None, min_length=8, max_length=200)
+    admin_password: str | None = Field(default=None, min_length=8, max_length=200)
 
 
 @router.post("/api/admin/config")
@@ -175,6 +183,11 @@ def save_config(req: SaveConfigRequest,
     # A camera is chosen by name, not by a Discord id, so it skips the check above.
     if req.kiosk_camera is not None:
         updates["KIOSK_CAMERA"] = req.kiosk_camera
+    # Passwords are never read back out, only replaced.
+    if req.lab_password is not None:
+        updates["WEB_PASSWORD"] = req.lab_password
+    if req.admin_password is not None:
+        updates["WEB_ADMIN_PASSWORD"] = req.admin_password
     config.save_settings(updates)
     print("⚙️ Admin page saved Discord settings")
     return {
@@ -316,9 +329,9 @@ def diagnostics(creditbot_session: str | None = Cookie(default=None)):
             "enrolment_open_to_internet": webapp.WEB_ENROLL_PUBLIC,
             "posts_photos_to_discord": config.KIOSK_POST_PHOTOS,
             "timezone": os.getenv("TZ", "unset"),
-            "lab_password_set": bool(webapp.WEB_PASSWORD),
-            "admin_password_separate": bool(WEB_ADMIN_PASSWORD)
-                                       and WEB_ADMIN_PASSWORD != webapp.WEB_PASSWORD,
+            "lab_password_set": bool(webapp.lab_password()),
+            "admin_password_separate": bool(admin_password())
+                                       and admin_password() != webapp.lab_password(),
             "kiosk_api_key_set": bool(os.getenv("KIOSK_API_KEY", "")),
         },
     }
