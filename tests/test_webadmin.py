@@ -256,3 +256,69 @@ def test_the_preferred_camera_round_trips(admin, db):
                       json={"kiosk_camera": "BRIO"}).status_code == 200
     assert config.KIOSK_CAMERA == "BRIO"
     assert admin.get("/app/api/admin/config").json()["kiosk_camera"] == "BRIO"
+
+
+# ------------------------------------------------------ rotating passwords
+# "Change the door key when someone leaves the team" was advice the README
+# gave but the software could not follow without a shell on the server.
+
+def test_the_lab_password_can_be_rotated_from_the_admin_page(admin, web, db):
+    assert admin.post("/app/api/admin/config",
+                      json={"lab_password": "a-brand-new-key"}).status_code == 200
+
+    # The new one works immediately, with no restart...
+    assert webapp.lab_password() == "a-brand-new-key"
+    fresh = TestClient(api.app)
+    assert fresh.post("/app/api/login",
+                      json={"password": "a-brand-new-key"}).status_code == 200
+    # ...and the old one does not.
+    assert fresh.post("/app/api/login",
+                      json={"password": PASSWORD}).status_code == 401
+
+
+def test_rotating_the_password_does_not_sign_a_terminal_out(admin, web, db):
+    """An armed kiosk must not need re-arming because the key changed."""
+    database.get_or_create_user("42", "alice")
+    web.post("/app/api/login", json={"password": PASSWORD})
+    web.post("/app/api/select", json={"discord_id": "42"})
+    assert web.get("/app/api/me").json()["person"]["name"] == "alice"
+
+    admin.post("/app/api/admin/config", json={"lab_password": "a-brand-new-key"})
+
+    # Cookies are signed with WEB_SECRET, not the password.
+    assert web.get("/app/api/me").json()["person"]["name"] == "alice"
+
+
+def test_the_admin_password_can_be_rotated_separately(admin, db):
+    assert admin.post("/app/api/admin/config",
+                      json={"admin_password": "separate-admin-key"}).status_code == 200
+    assert webadmin.admin_password() == "separate-admin-key"
+    # The lab password is untouched, and no longer opens the admin page.
+    assert webapp.lab_password() == PASSWORD
+    fresh = TestClient(api.app)
+    assert fresh.post("/app/api/admin/login",
+                      json={"password": PASSWORD}).status_code == 401
+    assert fresh.post("/app/api/admin/login",
+                      json={"password": "separate-admin-key"}).status_code == 200
+
+
+def test_passwords_are_never_read_back_out(admin, db):
+    admin.post("/app/api/admin/config", json={"lab_password": "a-brand-new-key"})
+    body = admin.get("/app/api/admin/config").json()
+    assert "a-brand-new-key" not in str(body)
+    diag = admin.get("/app/api/admin/diagnostics").json()
+    assert "a-brand-new-key" not in str(diag)
+    assert diag["settings"]["lab_password_set"] is True   # only ever a boolean
+
+
+def test_a_trivially_short_password_is_refused(admin, db):
+    assert admin.post("/app/api/admin/config",
+                      json={"lab_password": "short"}).status_code == 422
+    assert webapp.lab_password() == PASSWORD   # unchanged
+
+
+def test_rotating_needs_admin_not_just_the_lab_password(web, db):
+    web.post("/app/api/login", json={"password": PASSWORD})
+    assert web.post("/app/api/admin/config",
+                    json={"lab_password": "a-brand-new-key"}).status_code == 403
+    assert webapp.lab_password() == PASSWORD

@@ -248,6 +248,26 @@
     </div>
 
     <div class="block">
+      <div class="block-head">Passwords <small>change the door key</small></div>
+      <div class="block-body">
+        <p class="hint" style="margin-top:0">Rotate these when somebody leaves the
+          team. Terminals that are already signed in stay signed in.</p>
+
+        <label for="pw-lab">New lab password</label>
+        <input id="pw-lab" type="password" autocomplete="new-password"
+               placeholder="Leave blank to keep the current one">
+
+        <label for="pw-admin">New admin password</label>
+        <input id="pw-admin" type="password" autocomplete="new-password"
+               placeholder="Leave blank to keep the current one">
+        <p class="hint">Keep this one different from the lab password if the site
+          is reachable from the internet — this page holds the bot token.</p>
+
+        <button id="btn-pw" class="full" style="margin-top:14px">Change passwords</button>
+      </div>
+    </div>
+
+    <div class="block">
       <div class="block-head">Diagnostics <small>cameras and health</small></div>
       <div class="block-body">
         <p class="hint" style="margin-top:0">Which webcam a terminal uses, a live
@@ -430,6 +450,35 @@ $("btn-save").addEventListener("click", async () => {
 
 // ---------- terminal ----------
 let termCursor = 0, termTimer = null, termPaused = false;
+
+$("btn-pw").addEventListener("click", async () => {
+  const lab = $("pw-lab").value;
+  const admin = $("pw-admin").value;
+  if (!lab && !admin) {
+    say($("main-msg"), "Nothing to change — fill in at least one.", "warn");
+    return;
+  }
+  if ((lab && lab.length < 8) || (admin && admin.length < 8)) {
+    say($("main-msg"), "Passwords need at least 8 characters.", "err");
+    return;
+  }
+  const btn = $("btn-pw");
+  btn.disabled = true;
+  try {
+    const payload = {};
+    if (lab) payload.lab_password = lab;
+    if (admin) payload.admin_password = admin;
+    await api("/admin/config", { method: "POST", body: JSON.stringify(payload) });
+    $("pw-lab").value = ""; $("pw-admin").value = "";
+    say($("main-msg"),
+        "Changed. Use the new password next time you sign in; "
+        + "terminals already signed in stay signed in.", "ok");
+  } catch (err) {
+    say($("main-msg"), err.message, "err");
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 function startTerm() {
   if (termTimer) return;

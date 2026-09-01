@@ -124,6 +124,8 @@ addresses.
 Be aware of what this means: the site is then reachable by anyone who finds the
 URL, protected by one shared password. Choose a long one, and set a **separate**
 `WEB_ADMIN_PASSWORD` — the admin page holds your bot token and a live server log.
+Both can be changed later from `/app/admin` without touching the server, so
+rotating the key when somebody leaves the team is a browser job.
 Self-registration is automatically refused for traffic arriving over Funnel, so
 strangers cannot enrol their face under someone else's name; set
 `WEB_ENROLL_PUBLIC=1` only if you actually want that.
@@ -183,7 +185,7 @@ Only `WEB_PASSWORD` is really required. Discord settings are better done through
 
 | Setting | Default | What it does |
 |---|---|---|
-| `WEB_PASSWORD` | *(unset)* | Shared lab password. Unset means nobody can sign in. |
+| `WEB_PASSWORD` | *(unset)* | Shared lab password. Unset means nobody can sign in. Rotate it from `/app/admin`. |
 | `WEB_ADMIN_PASSWORD` | *(unset)* | Password for `/app/admin`. Unset means the lab password opens it too — set this if the site is public. |
 | `WEB_ENABLED` | `1` | `0` serves no web client; the kiosk API keeps working. |
 | `WEB_HTTPS` | `0` | `1` when reached over HTTPS, so cookies are marked Secure. |

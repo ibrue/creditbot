@@ -47,6 +47,18 @@ from utils.helpers import format_duration, get_credit_tier
 
 WEB_ENABLED = os.getenv("WEB_ENABLED", "1") == "1"
 WEB_PASSWORD = os.getenv("WEB_PASSWORD", "")
+
+
+def lab_password() -> str:
+    """The shared lab password.
+
+    Read at each use rather than captured at import, so it can be rotated
+    from the admin page without a shell on the server. An override saved
+    there wins over .env, the same way the Discord settings do. Rotating it
+    does not sign anyone out: session cookies are signed with WEB_SECRET,
+    so an armed terminal stays armed.
+    """
+    return config.setting("WEB_PASSWORD", "") or WEB_PASSWORD
 WEB_HTTPS = os.getenv("WEB_HTTPS", "0") == "1"
 WEB_TRUST_PROXY = os.getenv("WEB_TRUST_PROXY", "0") == "1"
 
@@ -182,7 +194,7 @@ class LoginRequest(BaseModel):
 def login(req: LoginRequest, request: Request):
     if not WEB_ENABLED:
         raise HTTPException(status_code=404, detail="Web client is disabled")
-    if not WEB_PASSWORD:
+    if not lab_password():
         raise HTTPException(
             status_code=503,
             detail="WEB_PASSWORD is not set on the server — the web client "
@@ -199,7 +211,7 @@ def login(req: LoginRequest, request: Request):
             headers={"Retry-After": str(retry_after)},
         )
 
-    if not web_auth.password_matches(req.password, WEB_PASSWORD):
+    if not web_auth.password_matches(req.password, lab_password()):
         limiter.record_failure(key)
         raise HTTPException(status_code=401, detail="Wrong password")
 
