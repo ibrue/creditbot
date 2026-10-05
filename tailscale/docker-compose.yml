@@ -1,0 +1,45 @@
+# Tailscale on the UGREEN NAS (UGOS).
+#
+# This runs in host networking + kernel mode, so the NAS *itself* joins the
+# tailnet — not just this container. Once it's up, creditbot-api on :8765 is
+# reachable from any device on your tailnet, with no port forwarding and
+# nothing exposed to the public internet.
+#
+# It's a separate compose project from ../docker-compose.yml on purpose:
+# rebuilding the bot ("docker compose up -d --build") should never bounce
+# your VPN, and losing the VPN shouldn't take the bot down with it.
+
+services:
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: tailscale
+    restart: unless-stopped
+
+    # Host mode puts the tailscale0 interface in the NAS's own network
+    # namespace, which is what makes every service on the NAS reachable.
+    # Note: docker rejects a `hostname:` key alongside network_mode host —
+    # set the tailnet name with --hostname in TS_EXTRA_ARGS instead.
+    network_mode: host
+
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+
+    volumes:
+      # Node identity + keys. Persisting this is what stops the NAS from
+      # showing up as a brand-new machine every time the container restarts.
+      - ./state:/var/lib/tailscale
+
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY:?set TS_AUTHKEY in tailscale/.env - see TAILSCALE_SETUP.md}
+      - TS_STATE_DIR=/var/lib/tailscale
+      # Kernel networking rather than the default userspace proxy — required
+      # for the NAS's existing ports to answer over the tailnet.
+      - TS_USERSPACE=false
+      # Leave the NAS's own DNS alone; UGOS manages /etc/resolv.conf.
+      - TS_ACCEPT_DNS=false
+      - TS_EXTRA_ARGS=${TS_EXTRA_ARGS:-}
+      # Optional LAN subnet to advertise, e.g. 192.168.1.0/24. Empty = off.
+      - TS_ROUTES=${TS_ROUTES:-}
