@@ -108,6 +108,15 @@ def call(command, cog, bot, interaction, *args, **kwargs):
 
 # ----------------------------------------------------- daily check-in post
 
+def test_the_daily_post_is_scheduled_on_the_labs_clock():
+    """discord.py reads a time without a tzinfo as UTC, which posted the
+    "5 PM" check-in at noon in Chicago."""
+    (scheduled,) = CheckinCog.daily_checkin_post.time
+
+    assert scheduled.tzinfo is config.LOCAL_TZ
+    assert (scheduled.hour, scheduled.minute) == (config.DAILY_CHECKIN_HOUR, 0)
+
+
 def test_the_daily_message_is_posted_and_seeded_with_reactions(cog, db, monkeypatch):
     monkeypatch.setattr(config, "CHECKIN_CHANNEL_ID", 777)
     channel = FakeChannel()

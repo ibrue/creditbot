@@ -35,7 +35,7 @@ class CheckinCog(commands.Cog):
         self.daily_checkin_post.cancel()
         self.auto_checkout.cancel()
 
-    @tasks.loop(time=time(hour=config.DAILY_CHECKIN_HOUR, minute=0))
+    @tasks.loop(time=time(hour=config.DAILY_CHECKIN_HOUR, minute=0, tzinfo=config.LOCAL_TZ))
     async def daily_checkin_post(self):
         """Post the daily check-in message."""
         # An unhandled exception would permanently stop this loop until

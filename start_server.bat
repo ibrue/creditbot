@@ -17,7 +17,7 @@ if not exist .venv\Scripts\python.exe (
 )
 
 REM Make sure dependencies are installed (fast no-op when already there)
-.venv\Scripts\python -c "import discord, fastapi, uvicorn, requests, dotenv, apscheduler" >nul 2>nul
+.venv\Scripts\python -c "import discord, fastapi, uvicorn, requests, dotenv, apscheduler, tzdata" >nul 2>nul
 if errorlevel 1 (
     echo Installing dependencies...
     .venv\Scripts\python -m pip install --upgrade pip || goto :error
