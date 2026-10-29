@@ -26,3 +26,20 @@ services:
     ports:
       - "8765:8765"
     command: uvicorn api:app --host 0.0.0.0 --port 8765
+
+  # Context Bot: a separate Discord bot for the EXP server that sends team
+  # activity to Claude for progress reports. Own token, own database; see
+  # contextbot/README.md. Waits quietly until CONTEXTBOT_DISCORD_TOKEN is set.
+  contextbot:
+    build: .
+    container_name: contextbot
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - TZ=${TZ:-America/Chicago}
+      - CONTEXTBOT_DATABASE_PATH=/data/contextbot.db
+      - CONTEXTBOT_WAIT_FOR_TOKEN=1
+      - PYTHONUNBUFFERED=1   # so `docker compose logs contextbot` shows output as it happens
+    volumes:
+      - ./data:/data
+    command: python -m contextbot

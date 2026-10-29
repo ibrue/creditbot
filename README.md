@@ -232,6 +232,15 @@ On Windows you can double-click `run_tests.bat`, which installs what it needs.
 - **Automatic updates** — a clone following `main` pulls merged changes and
   restarts within ~30 minutes. `AUTO_UPDATE=0` to opt out.
 
+## Context Bot (a second bot)
+
+`contextbot/` is a separate Discord bot that runs in the same `docker compose`
+stack: a third container, `contextbot`, with its own token, server, and
+database. It reads a team's Discord and uses Claude for progress reports,
+graded judgments of each member, and a CEO advisor you can DM. It stays
+switched off until you give it a token. Setup:
+[contextbot/README.md](contextbot/README.md).
+
 ## Privacy
 
 Enrolment is opt-in and per-person. The server stores face *embeddings* — 128

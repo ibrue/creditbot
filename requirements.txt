@@ -4,6 +4,8 @@ APScheduler>=3.10.0
 fastapi>=0.110.0
 uvicorn>=0.29.0
 requests>=2.31.0
+# Context Bot (contextbot/) talks to Claude
+anthropic>=2.3.0,<3
 # Face login on the web client (same YuNet/SFace models as the kiosk).
 # If these fail to install the server still runs — face login just
 # reports unavailable and the name picker takes over.
