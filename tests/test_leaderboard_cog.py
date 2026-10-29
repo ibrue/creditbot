@@ -5,7 +5,7 @@ handicap — the highest-stakes code in the project, since it rewrites
 everyone's weekly score once a week.
 """
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import discord
 import pytest
@@ -109,7 +109,7 @@ def cog():
 def _announcement_config(monkeypatch):
     """Make today the announcement day and give it a channel."""
     monkeypatch.setattr(config, "WEEKLY_ANNOUNCEMENT_DAY",
-                        datetime.now().strftime("%A").lower())
+                        datetime.now(config.LOCAL_TZ).strftime("%A").lower())
     monkeypatch.setattr(config, "ANNOUNCEMENTS_CHANNEL_ID", 555)
     monkeypatch.setattr(config, "WINNER_ROLE_ID", 0)
 
@@ -261,6 +261,39 @@ def test_a_failed_revocation_does_not_stop_the_crowning(cog):
 
 
 # ---------------------------------------------------- weekly announcement
+
+@pytest.mark.parametrize("loop, hour", [
+    (LeaderboardCog.weekly_announcement, config.WEEKLY_ANNOUNCEMENT_HOUR),
+    (LeaderboardCog.daily_leaderboard, config.DAILY_LEADERBOARD_HOUR),
+], ids=["weekly announcement", "daily leaderboard"])
+def test_posts_are_scheduled_on_the_labs_clock(loop, hour):
+    """discord.py reads a time without a tzinfo as UTC, which posted the
+    "6 PM" announcement at 1 PM in Chicago."""
+    (scheduled,) = loop.time
+
+    assert scheduled.tzinfo is config.LOCAL_TZ
+    assert (scheduled.hour, scheduled.minute) == (hour, 0)
+
+
+def test_the_day_is_judged_on_the_clock_the_loop_fires_by(cog, db, monkeypatch):
+    """Firing at 6 PM local but asking "is it Sunday?" of another clock can
+    skip the week, or announce on Saturday."""
+    ahead = timezone(timedelta(hours=14))
+    behind = timezone(timedelta(hours=-12))  # 26 hours apart: never the same day
+    monkeypatch.setattr(config, "WEEKLY_ANNOUNCEMENT_DAY",
+                        datetime.now(ahead).strftime("%A").lower())
+
+    monkeypatch.setattr(config, "LOCAL_TZ", behind)
+    quiet = FakeChannel(FakeGuild())
+    drive(cog, FakeBot(quiet), lambda: cog._weekly_announcement())
+
+    monkeypatch.setattr(config, "LOCAL_TZ", ahead)
+    announced = FakeChannel(FakeGuild())
+    drive(cog, FakeBot(announced), lambda: cog._weekly_announcement())
+
+    assert quiet.sent == []
+    assert announced.sent
+
 
 def test_nothing_happens_on_another_day(cog, db, monkeypatch):
     monkeypatch.setattr(config, "WEEKLY_ANNOUNCEMENT_DAY", "not-a-real-day")

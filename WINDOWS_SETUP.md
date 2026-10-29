@@ -29,6 +29,9 @@ dependencies, face models) and opens `.env` in Notepad. Fill in:
 - `DISCORD_TOKEN` — your bot token
 - `CHECKIN_CHANNEL_ID` / `ANNOUNCEMENTS_CHANNEL_ID`
 - `KIOSK_API_KEY` — any long random string
+- `TZ` — this PC's timezone, if it isn't US Central (`America/Chicago`),
+  e.g. `America/New_York`. The 5 PM check-in and the other scheduled
+  posts follow it through daylight saving.
 
 Save and close Notepad, and everything starts. The kiosk's own settings
 are written for you using the same API key, so there is nothing to copy

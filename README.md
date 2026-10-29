@@ -196,7 +196,7 @@ Only `WEB_PASSWORD` is really required. Discord settings are better done through
 | `KIOSK_POST_PHOTOS` | `1` | `0` stops check-in photos being posted to Discord. |
 | `OLLAMA_ENABLED` | `1` | Local-LLM captions on check-in photos. `0` if you have no Ollama. |
 | `DATABASE_PATH` | `social_credit.db` | Docker overrides this to `/data/social_credit.db`. |
-| `TZ` | `America/Chicago` | Bonuses like night-owl use local time. |
+| `TZ` | `America/Chicago` | The lab's timezone, for scheduled posts and bonuses like night-owl. Without Docker, the computer's own timezone. |
 | `AUTO_UPDATE` | `1` | Pull merged changes from GitHub and restart (needs a git clone). |
 
 ## The physical kiosk (optional)

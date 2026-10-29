@@ -107,7 +107,7 @@ class LeaderboardCog(commands.Cog):
             print(f"❌ Error updating winner role: {e}")
             return None
 
-    @tasks.loop(time=time(hour=config.WEEKLY_ANNOUNCEMENT_HOUR, minute=0))
+    @tasks.loop(time=time(hour=config.WEEKLY_ANNOUNCEMENT_HOUR, minute=0, tzinfo=config.LOCAL_TZ))
     async def weekly_announcement(self):
         """Post weekly leaderboard and reset scores."""
         # An unhandled exception here would silently kill ALL future
@@ -118,8 +118,8 @@ class LeaderboardCog(commands.Cog):
             print(f"⚠️ Weekly announcement failed: {e}")
 
     async def _weekly_announcement(self):
-        # Only run on the configured day
-        today = datetime.now().strftime("%A").lower()
+        # Only run on the configured day, judged on the clock the loop fires by
+        today = datetime.now(config.LOCAL_TZ).strftime("%A").lower()
         if today != config.WEEKLY_ANNOUNCEMENT_DAY:
             return
 
@@ -258,7 +258,7 @@ class LeaderboardCog(commands.Cog):
     async def before_weekly(self):
         await self.bot.wait_until_ready()
 
-    @tasks.loop(time=time(hour=config.DAILY_LEADERBOARD_HOUR, minute=0))
+    @tasks.loop(time=time(hour=config.DAILY_LEADERBOARD_HOUR, minute=0, tzinfo=config.LOCAL_TZ))
     async def daily_leaderboard(self):
         """Post daily leaderboard at 7 PM."""
         try:

@@ -1,7 +1,16 @@
 import json
 import os
+import sys
+import time
+from datetime import datetime, timezone, tzinfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from dotenv import load_dotenv
 
+# Windows' C runtime reads TZ the first time anything asks for local time,
+# and misreads a zone name like America/Chicago as UTC (an hour ahead in
+# summer). Settle it on Windows' own timezone before .env can set TZ.
+if sys.platform == "win32":
+    time.localtime()
 load_dotenv()
 
 
@@ -145,7 +154,45 @@ CREDITS = {
     "roasted": -1,            # 5+ fire reactions
 }
 
+
+def local_timezone() -> tzinfo:
+    """The timezone of this computer's clock, which the scheduled posts follow.
+
+    Night owl, weekends and every stored time read datetime.now(), the
+    computer's local time, so the schedule must use the same clock. TZ names
+    that clock's zone, which keeps the posts right across daylight saving:
+    docker-compose sets the container's clock from it. Without Docker (on
+    Windows, say) the clock is the computer's own and TZ only comes from
+    .env, so TZ is trusted only if it agrees with the clock. Failing that, the clock's current UTC offset is
+    used, which is an hour out after the next daylight-saving change until
+    the bot restarts.
+    """
+    clock = datetime.now().astimezone().tzinfo
+    name = os.getenv("TZ", "").strip()
+    if not name:
+        return clock
+    try:
+        zone = ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError, OSError):
+        # Windows has no timezone database of its own; zoneinfo reads the
+        # tzdata package from requirements.txt instead
+        print(f"⚠️ Unknown timezone TZ={name!r} (is the tzdata package installed?) "
+              f"— scheduled posts follow this computer's clock instead")
+        return clock
+    year = datetime.now().year
+    for month in (1, 7):  # winter and summer, in either hemisphere
+        instant = datetime(year, month, 1, tzinfo=timezone.utc)
+        if instant.astimezone(zone).utcoffset() != instant.astimezone().utcoffset():
+            print(f"⚠️ TZ={name} disagrees with this computer's clock — scheduled "
+                  f"posts follow the clock. Set TZ to the computer's timezone.")
+            return clock
+    return zone
+
+
 # Timing
+# Hours are on the lab's clock. discord.py reads a time without a tzinfo as
+# UTC, so the scheduled posts carry LOCAL_TZ.
+LOCAL_TZ = local_timezone()
 NIGHT_OWL_HOUR = 20  # 8 PM (24-hour format)
 AUTO_CHECKOUT_HOURS = 12  # Hours before auto-checkout
 DAILY_CHECKIN_HOUR = 17  # 5 PM - when daily checkin message posts
